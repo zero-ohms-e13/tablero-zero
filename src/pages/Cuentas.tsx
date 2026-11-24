@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { EditarNombre, LayoutCoach } from '../components/Coach';
 import { Icon } from '../components/Icon';
-import { Maya13 } from '../components/Marca';
+import { Wordmark } from '../components/Marca';
 import { Alerta, Avatar, Boton, Campo, Cargando, Sheet, claseCampo, useToast } from '../components/ui';
 import { admin, useAreas, useMembresias, usePerfiles, useSolicitudes, useTutores, type Ficha } from '../lib/datos';
 import { passwordTemporal, usuarioDesdeNombre } from '../lib/cuentas';
@@ -407,7 +407,7 @@ function Fichas({ fichas, onCerrar }: { fichas: Ficha[] | null; onCerrar: () => 
       <div id="fichas-imprimir" className="flex flex-col gap-3">
         {fichas?.map((f) => (
           <div key={f.usuario_id} className="flex flex-col gap-2 rounded-2xl border-2 border-dashed border-linea-campo p-4">
-            <div className="flex items-center gap-2 font-titulo text-sm font-bold tracking-[.06em] text-vino"><span>ZERΩ</span><Maya13 /><span>ΩHMS</span><span className="ml-auto font-mono text-[11px] font-medium tracking-normal text-tinta-3">FICHA DE ACCESO</span></div>
+            <div className="flex items-center gap-2 text-vino"><Wordmark /><span className="ml-auto font-mono text-[11px] font-medium tracking-normal text-tinta-3">FICHA DE ACCESO</span></div>
             <span className="text-[13px] text-tinta-2">{f.rol === 'tutor' ? `Cuenta de tutor de ${f.tutor_de ?? f.nombre.replace(/^Familia de /, '')}` : `Cuenta de ${f.nombre}`}</span>
             <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col"><span className="text-xs text-tinta-3">Dirección</span><span className="break-all font-mono text-[13px]">{location.host}</span></div>

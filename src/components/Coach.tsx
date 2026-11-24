@@ -32,7 +32,7 @@ export function SidebarCoach() {
   return (
     <aside className="box-border flex w-full flex-col gap-1 bg-vino px-[18px] py-5 text-crema md:min-h-screen md:w-[250px] md:shrink-0 md:py-7">
       <div className="mb-4 flex flex-col gap-2.5 px-1.5 md:mb-6">
-        <Wordmark size={17} />
+        <Wordmark />
         <span className="text-xs opacity-85">Tablero Zero · Coach</span>
       </div>
       <nav aria-label="Coach" className="flex flex-col gap-1">

@@ -63,7 +63,7 @@ export default function Bienvenida() {
   return (
     <main className="mx-auto flex min-h-screen max-w-[480px] flex-col bg-fondo text-tinta">
       <div className="flex flex-col gap-3 rounded-b-header bg-vino px-6 pb-7 pt-10 text-crema">
-        <Wordmark size={18} />
+        <Wordmark />
         <h1 className="m-0 mt-2 font-titulo text-[28px] font-bold leading-[1.1]">Bienvenida, {nombre}</h1>
         <p className="m-0 text-sm leading-[1.45]">Antes de entrar, cambia la contraseña de tu ficha por una que solo tú conozcas.</p>
       </div>

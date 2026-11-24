@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Icon } from '../components/Icon';
-import { LogoEspacio, Wordmark } from '../components/Marca';
+import { Lockup } from '../components/Marca';
 import { Alerta, AvisoBloqueo, Boton, Campo, claseCampo, Sheet } from '../components/ui';
 import { entrar, useSesion, type ErrorEntrar } from '../lib/sesion';
 import { configurado, recordar, supabase } from '../lib/supabase';
@@ -48,10 +48,7 @@ export default function Entrar() {
     <main className="flex min-h-screen justify-center bg-vino">
       <div className="box-border flex min-h-screen w-full max-w-[480px] flex-col gap-[22px] px-6 pb-6 pt-10 text-crema">
         <div className="flex flex-col gap-3.5">
-          <div className="flex items-center gap-3.5">
-            <LogoEspacio />
-            <Wordmark size={20} />
-          </div>
+          <Lockup ancho={300} />
           <span className="font-mono text-xs tracking-[.12em] opacity-85">ROBOTICS · PREPA ESTATAL 13</span>
           <h1 className="m-0 font-titulo text-[54px] font-bold leading-[.95]">
             Tablero

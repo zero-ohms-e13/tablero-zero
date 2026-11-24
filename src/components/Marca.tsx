@@ -1,6 +1,23 @@
-// Wordmark ZERΩ + 13 maya + ΩHMS. El logo del armadillo es de los alumnos:
-// solo dejamos el espacio punteado hasta tener el SVG oficial.
+// Marca oficial de Zero-Ohms (carpeta Zero-Ohms_marca, dibujada a partir del boceto de los alumnos).
+// Los SVG usan currentColor: toman el color del texto donde se ponen (crema sobre vino, vino sobre crema).
+// Tamaños mínimos del manual: wordmark 200 px de ancho, isotipo 64 px, emblema 300 px.
+import isotipoSvg from '../assets/marca/isotipo.svg?raw';
+import wordmarkSvg from '../assets/marca/wordmark.svg?raw';
+import lockupSvg from '../assets/marca/lockup.svg?raw';
 
+function Svg({ svg, ancho, etiqueta, className }: { svg: string; ancho: number; etiqueta: string; className?: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={etiqueta}
+      className={`block shrink-0 [&>svg]:block [&>svg]:h-auto [&>svg]:w-full ${className ?? ''}`}
+      style={{ width: ancho }}
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+}
+
+/** 13 maya suelto (para íconos chicos e impresiones). */
 export function Maya13({ className }: { className?: string }) {
   return (
     <svg width="22" height="19" viewBox="0 0 28 24" fill="currentColor" aria-hidden="true" className={className}>
@@ -13,33 +30,24 @@ export function Maya13({ className }: { className?: string }) {
   );
 }
 
-export function Wordmark({ size = 15 }: { size?: number }) {
-  return (
-    <div role="img" aria-label="Zero-Ohms, 13" className="flex items-center gap-2 font-titulo font-bold tracking-[.06em]" style={{ fontSize: size }}>
-      <span aria-hidden="true">ZERΩ</span>
-      <Maya13 />
-      <span aria-hidden="true">ΩHMS</span>
-    </div>
-  );
+/** Wordmark oficial ZERΩ 13 ΩHMS. Nunca por debajo de 200 px de ancho. */
+export function Wordmark({ ancho = 200 }: { ancho?: number }) {
+  return <Svg svg={wordmarkSvg} ancho={Math.max(200, ancho)} etiqueta="Zero-Ohms 13" />;
 }
 
-export function LogoEspacio({ size = 72 }: { size?: number }) {
-  return (
-    <div
-      aria-hidden="true"
-      className="flex shrink-0 items-center justify-center rounded-[20px] border-2 border-dashed border-crema/60 text-center text-[10px] leading-tight text-crema"
-      style={{ width: size, height: size }}
-    >
-      Logo
-      <br />
-      Zero-Ohms
-    </div>
-  );
+/** Isotipo: el armadillo que forma una Ω. Mínimo 64 px. */
+export function Isotipo({ ancho = 72 }: { ancho?: number }) {
+  return <Svg svg={isotipoSvg} ancho={Math.max(64, ancho)} etiqueta="Isotipo de Zero-Ohms" />;
+}
+
+/** Lockup anidado: armadillo con el wordmark debajo de la cabeza. */
+export function Lockup({ ancho = 300 }: { ancho?: number }) {
+  return <Svg svg={lockupSvg} ancho={ancho} etiqueta="Zero-Ohms 13" />;
 }
 
 export function FilaMarca() {
   return (
-    <div className="flex items-center justify-between text-crema">
+    <div className="flex items-center justify-between gap-3 text-crema">
       <Wordmark />
       <span className="font-mono text-[11px] tracking-[.1em] opacity-85">PREPA 13</span>
     </div>
