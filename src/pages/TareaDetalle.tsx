@@ -127,7 +127,7 @@ export default function TareaDetalle() {
     <div className="mx-auto flex min-h-screen max-w-[480px] flex-col bg-fondo" style={{ paddingBottom: trabaja && !hecha ? 96 : 24 }}>
       <HeaderVino
         titulo={t.titulo}
-        subtitulo={`${ROBOT_NOMBRE[t.robot]} · ${hecha ? 'hecha' : fechaTxt.startsWith('venció') ? fechaTxt : `vence ${fechaTxt.toLowerCase()}`}`}
+        subtitulo={`${ROBOT_NOMBRE[t.robot]} · ${hecha ? 'hecha' : !t.fecha_limite ? 'sin fecha' : fechaTxt.startsWith('venció') ? fechaTxt : `vence ${fechaTxt.toLowerCase()}`}`}
         atras={volver}
         accion={gestor && (
           <Link to={`/tarea/${t.id}/editar`} aria-label="Editar tarea" className="flex h-11 items-center rounded-campo border border-crema/35 px-3 text-[13px] text-crema no-underline hover:text-crema">Editar</Link>
@@ -267,7 +267,7 @@ export default function TareaDetalle() {
         </ol>
       </section>
 
-      {trabaja && !hecha && (
+      {trabaja && !hecha && (mia || t.estado === 'en_revision') && (
         <div className="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-w-[480px] gap-2 border-t border-linea bg-white px-4 pt-3" style={{ paddingBottom: 'max(18px, env(safe-area-inset-bottom))' }}>
           {gestor && t.estado === 'en_revision' ? (
             <>

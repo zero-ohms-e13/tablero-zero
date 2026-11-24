@@ -64,9 +64,9 @@ export default function MiArea() {
         )}
         <BateriaPorcentaje hechas={hechas} total={tareas.length} etiqueta="Avance del área" />
         <div className="grid grid-cols-3 gap-2">
-          <Dato n={hechas} t="hechas" />
+          <Dato n={hechas} t={hechas === 1 ? "hecha" : "hechas"} />
           <Dato n={porRevisar.length} t="por revisar" />
-          <Dato n={piden.length} t="piden ayuda" resaltar={piden.length > 0} />
+          <Dato n={piden.length} t={piden.length === 1 ? "pide ayuda" : "piden ayuda"} resaltar={piden.length > 0} />
         </div>
       </HeaderVino>
 

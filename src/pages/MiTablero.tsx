@@ -174,7 +174,7 @@ export default function MiTablero() {
             {logros.map((t, i) => (
               <div key={t.id} className={`flex flex-[0_0_200px] flex-col gap-1.5 rounded-2xl p-3.5 ${i === 0 ? 'bg-vino text-crema' : 'border border-linea bg-white'}`}>
                 <Icon name="palomita" size={22} stroke={2.2} className={i === 0 ? 'text-ambar' : 'text-cobre'} />
-                <span className="text-sm leading-[1.35]">{nombre(t.tarea_responsables[0]?.usuario_id)} terminó {t.titulo.charAt(0).toLowerCase() + t.titulo.slice(1)}</span>
+                <span className="text-sm leading-[1.35]">{nombre(t.tarea_responsables[0]?.usuario_id)} terminó «{t.titulo}»</span>
                 <span className={`text-[11px] ${i === 0 ? 'opacity-80' : 'text-tinta-3'}`}>{haceCuanto(t.aprobada_at!)}</span>
               </div>
             ))}

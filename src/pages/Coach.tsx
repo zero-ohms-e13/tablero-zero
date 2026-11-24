@@ -107,8 +107,8 @@ export default function Coach() {
               </div>
               <span className="flex flex-wrap gap-1.5 text-xs">
                 {a.por_revisar > 0 && <span className="rounded-full bg-crema px-2 py-[3px]">{a.por_revisar} por revisar</span>}
-                {a.piden_ayuda > 0 && <span className="rounded-full bg-ambar px-2 py-[3px] font-semibold text-vino-oscuro">{a.piden_ayuda} piden ayuda</span>}
-                {a.vencidas > 0 && <span className="rounded-full bg-vino px-2 py-[3px] font-semibold text-crema">{a.vencidas} vencidas</span>}
+                {a.piden_ayuda > 0 && <span className="rounded-full bg-ambar px-2 py-[3px] font-semibold text-vino-oscuro">{a.piden_ayuda} {a.piden_ayuda === 1 ? 'pide' : 'piden'} ayuda</span>}
+                {a.vencidas > 0 && <span className="rounded-full bg-vino px-2 py-[3px] font-semibold text-crema">{a.vencidas} {a.vencidas === 1 ? 'vencida' : 'vencidas'}</span>}
                 {!a.por_revisar && !a.piden_ayuda && !a.vencidas && <span className="rounded-full bg-atiempo-fondo px-2 py-[3px] text-atiempo">Al día</span>}
               </span>
             </button>

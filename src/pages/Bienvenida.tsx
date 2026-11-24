@@ -83,7 +83,7 @@ export default function Bienvenida() {
         {esTutor && (
           <div className="flex flex-col gap-2 rounded-2xl border border-linea bg-white p-3.5">
             <strong className="font-titulo text-base text-vino">Aviso de privacidad</strong>
-            <ul className="m-0 pl-[18px] text-[13px] leading-[1.5] text-[#3F2C20]">
+            <ul className="m-0 list-disc pl-[18px] text-[13px] leading-[1.5] text-[#3F2C20]">
               <li>Solo verás las tareas de tu hijo(a) y el avance general del equipo.</li>
               <li>La app guarda nombre corto y tareas; no pide correo, teléfono ni CURP.</li>
               <li>Al terminar el ciclo la cuenta se desactiva y sus datos se borran.</li>

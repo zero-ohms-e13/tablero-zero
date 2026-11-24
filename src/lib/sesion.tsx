@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { useQueryClient } from '@tanstack/react-query';
 import { FUNCIONES, recordar, supabase } from './supabase';
 import type { Membresia, Perfil } from './tipos';
 
@@ -60,27 +61,43 @@ export function SesionProvider({ children }: { children: ReactNode }) {
     setMembresias((m as Membresia[]) ?? []);
   }, []);
 
+  // Supabase emite INITIAL_SESSION al arrancar (con o sin sesión guardada), así que
+  // todo se carga desde aquí. Las consultas van fuera del callback (setTimeout) para
+  // no trabar el candado interno del cliente de auth.
+  const qc = useQueryClient();
   useEffect(() => {
-    let vivo = true;
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!vivo) return;
-      setSesion(data.session);
-      await cargarPerfil(data.session?.user.id);
-      if (vivo) setCargando(false);
-    });
+    let ultimoUid: string | undefined | null = null;
+    // La caché sin conexión es de una sola persona: se guarda con su id y se borra
+    // si entra alguien más o si cierra sesión (celulares compartidos).
+    const DUENO = 'tz.cache.dueno';
+    const limpiarCacheSiCambia = (uid: string | undefined) => {
+      try {
+        if ((localStorage.getItem(DUENO) ?? '') !== (uid ?? '')) {
+          qc.clear();
+          localStorage.removeItem('tz.cache');
+          if (uid) localStorage.setItem(DUENO, uid);
+          else localStorage.removeItem(DUENO);
+        }
+      } catch {
+        qc.clear();
+      }
+    };
     const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
       setSesion(s);
-      if (evento === 'SIGNED_IN' || evento === 'SIGNED_OUT' || evento === 'USER_UPDATED') {
-        setCargando(true);
-        // Fuera del callback para no bloquear el cliente de auth.
-        setTimeout(() => cargarPerfil(s?.user.id).finally(() => setCargando(false)), 0);
-      }
+      const uid = s?.user.id;
+      limpiarCacheSiCambia(uid);
+      const recargar = evento === 'INITIAL_SESSION' || evento === 'SIGNED_OUT' || evento === 'USER_UPDATED' || (evento === 'SIGNED_IN' && uid !== ultimoUid);
+      if (!recargar) return;
+      ultimoUid = uid;
+      if (evento !== 'INITIAL_SESSION') setCargando(true);
+      setTimeout(() => {
+        cargarPerfil(uid)
+          .catch(() => {})
+          .finally(() => setCargando(false));
+      }, 0);
     });
-    return () => {
-      vivo = false;
-      sub.subscription.unsubscribe();
-    };
-  }, [cargarPerfil]);
+    return () => sub.subscription.unsubscribe();
+  }, [cargarPerfil, qc]);
 
   const valor = useMemo<Ctx>(() => {
     const rol = perfil?.rol_global;

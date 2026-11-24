@@ -104,7 +104,7 @@ export default function Cuentas() {
       )}
 
       <div className="flex flex-wrap items-start gap-[18px]">
-        <section className="flex min-w-0 flex-[3_1_560px] flex-col gap-3 rounded-[20px] border border-linea bg-white px-5 py-[18px]">
+        <section className="flex min-w-0 flex-[3_1_640px] flex-col gap-3 rounded-[20px] border border-linea bg-white px-5 py-[18px]">
           <div className="flex flex-wrap items-center gap-1.5">
             <div role="tablist" aria-label="Tipo de cuenta" className="flex flex-wrap gap-1.5">
               {([['alumnos', `Alumnos · ${alumnos.length}`], ['tutores', `Tutores · ${tutores.length}`], ['lideres', `Líderes · ${lideres.length}`], ['mentores', `Coach y mentores · ${mentores.length}`]] as [Pestana, string][]).map(([k, t]) => (
@@ -116,11 +116,11 @@ export default function Cuentas() {
           </div>
           {isLoading ? <Cargando /> : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] border-collapse">
+              <table className="w-full min-w-[640px] border-collapse">
                 <thead>
                   <tr>
                     {['Nombre', 'Usuario', 'Rol', pestana === 'tutores' ? 'Tutor de' : 'Área', pestana === 'tutores' ? '' : 'Tutor vinculado', 'Estado', ''].map((h, i) => (
-                      <th key={i} scope="col" className="whitespace-nowrap border-b-2 border-linea px-3 py-2.5 text-left text-xs font-semibold text-tinta-3">{h}</th>
+                      <th key={i} scope="col" className="whitespace-nowrap border-b-2 border-linea px-2 py-2.5 text-left text-xs font-semibold text-tinta-3">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -130,10 +130,10 @@ export default function Cuentas() {
                     const misAreas = membresias.filter((m) => m.usuario_id === p.id).map((m) => areas.find((a) => a.id === m.area_id)).filter(Boolean);
                     return (
                       <tr key={p.id}>
-                        <td className="border-b border-[#F0E4CC] p-3 text-sm"><span className="flex items-center gap-2.5"><Avatar iniciales={p.iniciales} color={p.color} size={32} /><strong>{p.nombre_visible}</strong></span></td>
-                        <td className="border-b border-[#F0E4CC] p-3 font-mono text-[13px]">{p.usuario}</td>
-                        <td className="border-b border-[#F0E4CC] p-3 text-sm">{rolTexto(p)}</td>
-                        <td className="border-b border-[#F0E4CC] p-3 text-sm">
+                        <td className="border-b border-[#F0E4CC] px-2 py-3 text-sm"><span className="flex items-center gap-2.5"><Avatar iniciales={p.iniciales} color={p.color} size={32} /><strong className="whitespace-nowrap">{p.nombre_visible}</strong></span></td>
+                        <td className="border-b border-[#F0E4CC] px-2 py-3 font-mono text-[13px]">{p.usuario}</td>
+                        <td className="border-b border-[#F0E4CC] px-2 py-3 text-sm">{rolTexto(p)}</td>
+                        <td className="border-b border-[#F0E4CC] px-2 py-3 text-sm">
                           {pestana === 'tutores' ? hijosDe(p.id) || '—' : (
                             <span className="flex flex-wrap gap-2">
                               {misAreas.map((a) => <span key={a!.id} className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: a!.color }}><span className="h-2 w-2 rounded-full" style={{ background: a!.color }} />{a!.nombre}</span>)}
@@ -141,13 +141,13 @@ export default function Cuentas() {
                             </span>
                           )}
                         </td>
-                        <td className="border-b border-[#F0E4CC] p-3 font-mono text-xs text-tinta-2">{pestana === 'tutores' ? '' : p.rol_global === 'alumno' ? tutorDe(p.id) || '—' : ''}</td>
-                        <td className="border-b border-[#F0E4CC] p-3"><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${e.c}`}>{e.t}</span></td>
-                        <td className="whitespace-nowrap border-b border-[#F0E4CC] p-3 text-right">
+                        <td className="border-b border-[#F0E4CC] px-2 py-3 font-mono text-xs text-tinta-2">{pestana === 'tutores' ? '' : p.rol_global === 'alumno' ? tutorDe(p.id) || '—' : ''}</td>
+                        <td className="border-b border-[#F0E4CC] px-2 py-3"><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${e.c}`}>{e.t}</span></td>
+                        <td className="whitespace-nowrap border-b border-[#F0E4CC] px-2 py-3 text-right">
                           <span className="inline-flex gap-1.5">
                             {(p.rol_global !== 'coach' || p.id === yo?.id) && (
-                              <button onClick={() => setReiniciar(p)} className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-[9px] border border-linea-campo bg-white px-3 text-[13px] text-vino">
-                                <Icon name="llave" size={16} /> Reiniciar contraseña
+                              <button onClick={() => setReiniciar(p)} aria-label={`Reiniciar contraseña de ${p.nombre_visible}`} className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-[9px] border border-linea-campo bg-white px-3 text-[13px] text-vino">
+                                <Icon name="llave" size={16} /> Reiniciar
                               </button>
                             )}
                             {p.id !== yo?.id && p.rol_global !== 'coach' && (
@@ -233,7 +233,7 @@ function NuevaCuenta({ areas, alumnos, puedeMentor, onCreada }: {
   }
 
   return (
-    <section className="flex min-w-0 flex-[1_1_300px] flex-col gap-3 rounded-[20px] border border-linea bg-white px-5 py-[18px]">
+    <section className="flex min-w-0 flex-[1_1_280px] lg:max-w-[320px] flex-col gap-3 rounded-[20px] border border-linea bg-white px-5 py-[18px]">
       <h2 className="m-0 font-titulo text-xl font-bold text-vino">Nueva cuenta</h2>
       <form onSubmit={crear} noValidate className="flex flex-col gap-3">
         {error && <Alerta>{error}</Alerta>}
