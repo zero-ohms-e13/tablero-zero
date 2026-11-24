@@ -13,6 +13,13 @@ function ok<T>(r: { data: T | null; error: { message: string } | null }): T {
   return r.data as T;
 }
 
+/** Para updates: si la RLS filtró la fila, no hubo cambio y lo decimos. */
+function okU<T>(r: { data: T[] | null; error: { message: string } | null }): T[] {
+  const filas = ok(r);
+  if (!filas || filas.length === 0) throw new Error('No tienes permiso para hacer eso.');
+  return filas;
+}
+
 export function traducirError(m: string) {
   if (/row-level security|permission denied|42501/i.test(m)) return 'No tienes permiso para hacer eso.';
   if (/Failed to fetch|NetworkError|network/i.test(m)) return 'Sin internet. Intenta cuando vuelva la conexión.';
@@ -101,7 +108,7 @@ function useInvalidar() {
 export function useMoverEstado() {
   const inv = useInvalidar();
   return useMutation({
-    mutationFn: async ({ id, estado }: { id: string; estado: Estado }) => ok(await supabase.from('tareas').update({ estado }).eq('id', id).select('id')),
+    mutationFn: async ({ id, estado }: { id: string; estado: Estado }) => okU(await supabase.from('tareas').update({ estado }).eq('id', id).select('id')),
     onSuccess: (_d, v) => inv(v.id),
   });
 }
@@ -110,7 +117,7 @@ export function usePedirAyuda() {
   const inv = useInvalidar();
   return useMutation({
     mutationFn: async ({ id, pide, mensaje }: { id: string; pide: boolean; mensaje?: string }) =>
-      ok(await supabase.from('tareas').update({ pide_ayuda: pide, mensaje_ayuda: pide ? mensaje?.trim() || null : null }).eq('id', id).select('id')),
+      okU(await supabase.from('tareas').update({ pide_ayuda: pide, mensaje_ayuda: pide ? mensaje?.trim() || null : null }).eq('id', id).select('id')),
     onSuccess: (_d, v) => inv(v.id),
   });
 }
@@ -119,7 +126,7 @@ export function useMarcarPaso() {
   const inv = useInvalidar();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: Pick<Paso, 'id' | 'tarea_id' | 'hecho'>) => ok(await supabase.from('tarea_pasos').update({ hecho: p.hecho }).eq('id', p.id).select('id')),
+    mutationFn: async (p: Pick<Paso, 'id' | 'tarea_id' | 'hecho'>) => okU(await supabase.from('tarea_pasos').update({ hecho: p.hecho }).eq('id', p.id).select('id')),
     onMutate: async (p) => {
       // Respuesta inmediata en pantalla
       qc.setQueryData(['tarea', p.tarea_id], (old: { tarea: Tarea } | undefined) =>
@@ -205,7 +212,7 @@ export function useGuardarTarea() {
       };
       let id = f.id;
       if (id) {
-        ok(await supabase.from('tareas').update(datos).eq('id', id).select('id'));
+        okU(await supabase.from('tareas').update(datos).eq('id', id).select('id'));
       } else {
         const r = ok(await supabase.from('tareas').insert(datos).select('id').single()) as { id: string };
         id = r.id;
@@ -224,7 +231,7 @@ export function useGuardarTarea() {
       const borrar = (viejos ?? []).map((p) => p.id).filter((x) => !conservar.has(x));
       if (borrar.length) ok(await supabase.from('tarea_pasos').delete().in('id', borrar).select('id'));
       for (const [i, p] of pasos.entries()) {
-        if (p.id) ok(await supabase.from('tarea_pasos').update({ orden: i + 1, texto: p.texto.trim() }).eq('id', p.id).select('id'));
+        if (p.id) okU(await supabase.from('tarea_pasos').update({ orden: i + 1, texto: p.texto.trim() }).eq('id', p.id).select('id'));
         else ok(await supabase.from('tarea_pasos').insert({ tarea_id: id, orden: i + 1, texto: p.texto.trim() }).select('id'));
       }
       return id!;
