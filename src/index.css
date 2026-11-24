@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body { @apply bg-fondo text-tinta font-sans; margin: 0; }
+  input, button, select, textarea { font-family: inherit; }
+  /* Campos de 16px para que iOS no haga zoom */
+  input, select, textarea { font-size: 16px; }
+  a { color: #590202; }
+  a:hover { color: #3A0101; }
+  :focus-visible { outline: 3px solid #E9A84F; outline-offset: 2px; }
+}
+
+@keyframes seg-fill { 0% { opacity: .15 } 100% { opacity: 1 } }
+@keyframes rayo { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.seg { animation: seg-fill .5s ease-out both; }
+.rayo { animation: rayo 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .seg, .rayo { animation: none !important; }
+  * { transition: none !important; }
+}

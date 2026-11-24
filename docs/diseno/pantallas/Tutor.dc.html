@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Vista tutor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif}
+a{color:#590202}a:hover{color:#3a0101}
+@keyframes pulse{50%{opacity:.35}}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+:focus-visible{outline:3px solid #E9A84F;outline-offset:2px}
+</style>
+</helmet>
+<div style="width:390px;height:1270px;box-sizing:border-box;background:#FBF4E6;color:#2A1A12;display:flex;flex-direction:column;overflow:hidden">
+
+<header style="background:#590202;color:#F3E2C1;padding:20px 20px 24px;display:flex;flex-direction:column;gap:16px;border-radius:0 0 28px 28px">
+<div style="display:flex;justify-content:space-between;align-items:center;color:#F3E2C1"><div role="img" aria-label="Zero-Ohms, 13" style="display:flex;align-items:center;gap:8px;font-family:'Chakra Petch';font-weight:700;font-size:15px;letter-spacing:.06em"><span aria-hidden="true">ZERΩ</span><svg width="22" height="19" viewBox="0 0 28 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="3"/><circle cx="14" cy="4" r="3"/><circle cx="22" cy="4" r="3"/><rect x="0" y="10" width="28" height="5" rx="1.5"/><rect x="0" y="18" width="28" height="5" rx="1.5"/></svg><span aria-hidden="true">ΩHMS</span></div><span style="font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.1em;opacity:.85">PREPA 13</span></div>
+
+<div style="display:flex;align-items:center;gap:12px">
+<div aria-hidden="true" style="width:48px;height:48px;border-radius:14px;background:#2F5D8A;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Chakra Petch';font-weight:700;font-size:18px">AL</div>
+<div style="display:flex;flex-direction:column;gap:2px">
+<span style="font-size:12px;opacity:.85">Cuenta de tutor · solo lectura</span>
+<span style="font-family:'Chakra Petch';font-weight:700;font-size:22px">Así va Ana</span>
+</div>
+</div>
+<div role="img" aria-label="Batería de la semana: 3 de 4 tareas listas" style="display:flex;align-items:center">
+<div style="flex-grow:1;height:72px;border:3px solid #F3E2C1;border-radius:16px;padding:6px;box-sizing:border-box;display:flex;gap:6px">
+<span style="flex:1 1 0;border-radius:9px;background:#E9A84F"></span><span style="flex:1 1 0;border-radius:9px;background:#E9A84F"></span><span style="flex:1 1 0;border-radius:9px;background:#E9A84F"></span><span style="flex:1 1 0;border-radius:9px;background:rgba(243,226,193,.14)"></span>
+</div>
+<div style="width:9px;height:26px;background:#F3E2C1;border-radius:0 5px 5px 0"></div>
+</div>
+<span style="font-size:15px;line-height:1.4"><strong style="font-family:'Chakra Petch';font-size:20px">3 de 4</strong> tareas terminadas esta semana en Programación.</span>
+</header>
+
+<section style="margin:18px 16px 0;background:#fff;border:2px solid #E9A84F;border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:6px">
+<span style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:#590202"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg>Necesita tu apoyo</span>
+<span style="font-family:'Chakra Petch';font-weight:600;font-size:17px;line-height:1.25">Subir fotos del chasis para el Notebook</span>
+<span style="font-size:14px;line-height:1.45;color:#5A4335">Se le pasó la fecha (lunes 23). Ya pidió ayuda a su líder; pregúntale cómo va.</span>
+</section>
+
+<section aria-label="Semana" style="margin:16px 16px 0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;background:#fff"><span style="font-size:11px;font-weight:600">L</span><span style="font-family:'Chakra Petch';font-weight:700;font-size:17px">23</span><span style="width:6px;height:6px;border-radius:50%;background:#590202"></span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;background:#590202;color:#F3E2C1"><span style="font-size:11px;font-weight:600">M</span><span style="font-family:'Chakra Petch';font-weight:700;font-size:17px">24</span><span style="width:6px;height:6px;border-radius:50%;background:#E9A84F"></span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;background:#fff"><span style="font-size:11px;font-weight:600">M</span><span style="font-family:'Chakra Petch';font-weight:700;font-size:17px">25</span><span style="width:6px;height:6px"></span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;background:#fff"><span style="font-size:11px;font-weight:600">J</span><span style="font-family:'Chakra Petch';font-weight:700;font-size:17px">26</span><span style="width:6px;height:6px"></span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;background:#fff"><span style="font-size:11px;font-weight:600">V</span><span style="font-family:'Chakra Petch';font-weight:700;font-size:17px">27</span><span style="width:6px;height:6px;border-radius:50%;background:#2F5D8A"></span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;background:#fff"><span style="font-size:11px;font-weight:600">S</span><span style="font-family:'Chakra Petch';font-weight:700;font-size:17px">28</span><span style="width:6px;height:6px"></span></div>
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;background:#fff"><span style="font-size:11px;font-weight:600">D</span><span style="font-family:'Chakra Petch';font-weight:700;font-size:17px">29</span><span style="width:6px;height:6px"></span></div>
+</section>
+
+<section style="margin:16px 16px 0;display:flex;flex-direction:column;gap:10px"><h2 style="margin:0;font-family:'Chakra Petch';font-weight:700;font-size:18px;color:#590202">Metas del robot en las que participa Ana</h2><div style="background:#fff;border:1px solid #E9D9BC;border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px"><span style="font-family:'IBM Plex Mono';color:#6B5444">FTC · BioBuzz · Vie 28</span><span style="padding:3px 9px;border-radius:999px;background:#E2EAF3;color:#2F5D8A;font-weight:600">1 tarea de Ana</span></div><strong style="font-family:'Chakra Petch';font-weight:600;font-size:17px;line-height:1.25">Autonomous de 15 s probado en la cancha</strong><div role="img" aria-label="3 de 5 tareas listas" style="display:flex;align-items:center"><div style="flex-grow:1;height:22px;border:2px solid #590202;border-radius:6px;padding:2px;box-sizing:border-box;display:flex;gap:2px"><span style="flex:1;border-radius:3px;background:#9A590C"></span><span style="flex:1;border-radius:3px;background:#9A590C"></span><span style="flex:1;border-radius:3px;background:#9A590C"></span><span style="flex:1;border-radius:3px;background:#EFE2C8"></span><span style="flex:1;border-radius:3px;background:#EFE2C8"></span></div><div style="width:4px;height:9px;background:#590202"></div></div><span style="font-size:12px;color:#5A4335">3 de 5 tareas del equipo listas</span></div><div style="background:#fff;border:1px solid #E9D9BC;border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px"><span style="font-family:'IBM Plex Mono';color:#6B5444">VEX · Override · Jue 27</span><span style="padding:3px 9px;border-radius:999px;background:#E2EAF3;color:#2F5D8A;font-weight:600">1 tarea de Ana</span></div><strong style="font-family:'Chakra Petch';font-weight:600;font-size:17px;line-height:1.25">Elevador DR4B subiendo sin forzar</strong><div role="img" aria-label="2 de 4 tareas listas" style="display:flex;align-items:center"><div style="flex-grow:1;height:22px;border:2px solid #590202;border-radius:6px;padding:2px;box-sizing:border-box;display:flex;gap:2px"><span style="flex:1;border-radius:3px;background:#9A590C"></span><span style="flex:1;border-radius:3px;background:#9A590C"></span><span style="flex:1;border-radius:3px;background:#EFE2C8"></span><span style="flex:1;border-radius:3px;background:#EFE2C8"></span></div><div style="width:4px;height:9px;background:#590202"></div></div><span style="font-size:12px;color:#5A4335">2 de 4 tareas del equipo listas</span></div></section>
+
+<section style="margin:16px 16px 0;background:#F3E2C1;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="margin:0;font-family:'Chakra Petch';font-weight:700;font-size:18px;color:#590202">Avance del equipo</h2><span style="font-size:12px;color:#590202">todas las áreas</span></div>
+<div style="display:grid;grid-template-columns:100px minmax(0,1fr) 40px;gap:10px;align-items:center;font-size:13px">
+<span>Programación</span><div style="display:flex;align-items:center"><div style="flex-grow:1;height:18px;border:2px solid #590202;border-radius:5px;padding:2px;box-sizing:border-box"><div style="width:68%;height:100%;border-radius:2px;background:#9A590C"></div></div><div style="width:3px;height:8px;background:#590202"></div></div><span style="font-family:'IBM Plex Mono';font-size:12px">68%</span>
+<span>Mecánica</span><div style="display:flex;align-items:center"><div style="flex-grow:1;height:18px;border:2px solid #590202;border-radius:5px;padding:2px;box-sizing:border-box"><div style="width:54%;height:100%;border-radius:2px;background:#9A590C"></div></div><div style="width:3px;height:8px;background:#590202"></div></div><span style="font-family:'IBM Plex Mono';font-size:12px">54%</span>
+<span>Logística</span><div style="display:flex;align-items:center"><div style="flex-grow:1;height:18px;border:2px solid #590202;border-radius:5px;padding:2px;box-sizing:border-box"><div style="width:80%;height:100%;border-radius:2px;background:#9A590C"></div></div><div style="width:3px;height:8px;background:#590202"></div></div><span style="font-family:'IBM Plex Mono';font-size:12px">80%</span>
+<span>Rama femenil</span><div style="display:flex;align-items:center"><div style="flex-grow:1;height:18px;border:2px solid #590202;border-radius:5px;padding:2px;box-sizing:border-box"><div style="width:75%;height:100%;border-radius:2px;background:#9A590C"></div></div><div style="width:3px;height:8px;background:#590202"></div></div><span style="font-family:'IBM Plex Mono';font-size:12px">75%</span>
+</div>
+</section>
+
+<section style="margin:16px 16px 0;background:#590202;color:#F3E2C1;border-radius:18px;padding:16px;display:flex;align-items:center;gap:14px">
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:64px;height:64px;border-radius:14px;background:#E9A84F;color:#3a0101;flex-shrink:0"><span style="font-family:'Chakra Petch';font-weight:700;font-size:26px;line-height:1">6</span><span style="font-size:11px;font-weight:600">días</span></div>
+<div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;opacity:.85">Próxima competencia</span><span style="font-family:'Chakra Petch';font-weight:700;font-size:18px">Girl Powered</span><span style="font-size:13px">30 nov y 1 dic</span></div>
+</section>
+
+<a href="#" style="margin:16px 16px 24px;height:52px;border-radius:14px;border:2px solid #590202;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;font-weight:600;font-size:15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 0 1-13.5 7.8L3 21l1.2-4.5A9 9 0 1 1 21 12z"/></svg>Escribir al coach</a>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1270}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mi tablero</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif}
+a{color:#590202}a:hover{color:#3a0101}
+button{font-family:inherit}
+@keyframes pulse{50%{opacity:.35}}
+@keyframes bolt{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+.bolt{animation:bolt 1.4s ease-in-out infinite;transform-origin:center}
+@media (prefers-reduced-motion:reduce){.pulse,.bolt{animation:none}}
+:focus-visible{outline:3px solid #E9A84F;outline-offset:2px}
+</style>
+</helmet>
+<div style="width:390px;height:1500px;box-sizing:border-box;background:#FBF4E6;color:#2A1A12;display:flex;flex-direction:column;overflow:hidden">
+
+<header style="background:#590202;color:#F3E2C1;padding:20px 20px 24px;display:flex;flex-direction:column;gap:18px;border-radius:0 0 28px 28px">
+<div style="display:flex;justify-content:space-between;align-items:center;color:#F3E2C1"><div role="img" aria-label="Zero-Ohms, 13" style="display:flex;align-items:center;gap:8px;font-family:'Chakra Petch';font-weight:700;font-size:15px;letter-spacing:.06em"><span aria-hidden="true">ZERΩ</span><svg width="22" height="19" viewBox="0 0 28 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="3"/><circle cx="14" cy="4" r="3"/><circle cx="22" cy="4" r="3"/><rect x="0" y="10" width="28" height="5" rx="1.5"/><rect x="0" y="18" width="28" height="5" rx="1.5"/></svg><span aria-hidden="true">ΩHMS</span></div><span style="font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.1em;opacity:.85">PREPA 13</span></div>
+
+<div style="display:flex;align-items:center;gap:12px">
+<div aria-hidden="true" style="width:48px;height:48px;border-radius:14px;background:{{p.color}};color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Chakra Petch';font-weight:700;font-size:18px">{{p.ini}}</div>
+<div style="display:flex;flex-direction:column;gap:2px;flex-grow:1">
+<span style="font-family:'Chakra Petch';font-weight:700;font-size:22px">Hola, {{p.name}}</span>
+<span style="font-size:13px;opacity:.9">{{p.area}} · {{p.robot}}</span>
+</div>
+<button aria-label="Avisos" style="width:44px;height:44px;border-radius:12px;border:1px solid rgba(243,226,193,.35);background:transparent;color:#F3E2C1;display:flex;align-items:center;justify-content:center;position:relative">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/></svg>
+<span style="position:absolute;top:8px;right:9px;width:8px;height:8px;border-radius:50%;background:#E9A84F"></span>
+</button>
+</div>
+
+<div role="img" aria-label="Batería de la semana: {{p.done}} de {{p.total}} tareas listas" style="display:flex;align-items:center">
+<div style="flex-grow:1;height:78px;border:3px solid #F3E2C1;border-radius:16px;padding:6px;box-sizing:border-box;display:flex;gap:6px;position:relative">
+<sc-for list="{{segs}}" as="s" hint-placeholder-count="4">
+<div style="flex:1 1 0;border-radius:9px;background:{{s.bg}};display:flex;align-items:center;justify-content:center">
+<sc-if value="{{s.charging}}" hint-placeholder-val="{{ false }}"><svg class="bolt" width="26" height="26" viewBox="0 0 24 24" fill="#E9A84F" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></sc-if>
+</div>
+</sc-for>
+</div>
+<div style="width:9px;height:28px;background:#F3E2C1;border-radius:0 5px 5px 0"></div>
+</div>
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+<span style="font-family:'Chakra Petch';font-weight:700;font-size:28px;line-height:1">{{p.done}}<span style="font-size:18px;opacity:.75"> / {{p.total}} esta semana</span></span>
+</div>
+<span style="font-size:14px;line-height:1.4;margin-top:-10px">{{p.msg}}</span>
+</header>
+
+<section aria-label="Semana" style="margin:16px 16px 0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">
+<sc-for list="{{days}}" as="d" hint-placeholder-count="7">
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;background:{{d.bg}};color:{{d.fg}}">
+<span style="font-size:11px;font-weight:600">{{d.l}}</span>
+<span style="font-family:'Chakra Petch';font-weight:700;font-size:17px">{{d.n}}</span>
+<span style="width:6px;height:6px;border-radius:50%;background:{{d.dot}}"></span>
+</div>
+</sc-for>
+</section>
+
+<section style="margin:20px 16px 0;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="margin:0;font-family:'Chakra Petch';font-weight:700;font-size:19px;color:#590202">Tus pendientes</h2><span style="font-size:13px;color:#6B5444">{{p.left}} por hacer</span></div>
+<sc-for list="{{tasks}}" as="t" hint-placeholder-count="2">
+<article style="background:#fff;border-radius:18px;border:1px solid #E9D9BC;padding:14px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;gap:12px">
+<div aria-hidden="true" style="width:56px;height:56px;flex-shrink:0;border-radius:14px;background:{{p.tint}};color:{{p.color}};display:flex;align-items:center;justify-content:center">
+<sc-if value="{{t.isCode}}" hint-placeholder-val="{{ true }}"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg></sc-if>
+<sc-if value="{{t.isWrench}}" hint-placeholder-val="{{ false }}"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-3-3 8-8-1.3-1.3a4 4 0 0 1-5-5L13 2z"/><path d="m3 21 6-6"/></svg></sc-if>
+<sc-if value="{{t.isCamera}}" hint-placeholder-val="{{ false }}"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 7h3l2-3h6l2 3h3v13H4z"/><circle cx="12" cy="13" r="4"/></svg></sc-if>
+<sc-if value="{{t.isMega}}" hint-placeholder-val="{{ false }}"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 10v4h4l8 5V5L7 10z"/><path d="M19 9a4 4 0 0 1 0 6"/></svg></sc-if>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px;min-width:0;flex-grow:1">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-family:'IBM Plex Mono';font-size:11px;color:#6B5444">{{t.robot}}</span><span style="padding:3px 9px;border-radius:999px;background:{{t.dueBg}};color:{{t.dueFg}};font-size:12px;font-weight:600;white-space:nowrap">{{t.due}}</span></div>
+<h3 style="margin:0;font-family:'Chakra Petch';font-weight:600;font-size:17px;line-height:1.2">{{t.title}}</h3>
+</div>
+</div>
+<p style="margin:0;font-size:13px;line-height:1.45;color:#5A4335;background:#FBF4E6;border-radius:10px;padding:8px 10px"><strong style="color:#590202">Para qué sirve:</strong> {{t.why}}</p>
+<div style="display:flex;align-items:center;gap:6px">
+<sc-for list="{{t.steps}}" as="st" hint-placeholder-count="3"><span style="flex:1 1 0;height:8px;border-radius:4px;background:{{st.bg}}"></span></sc-for>
+<span style="font-family:'IBM Plex Mono';font-size:12px;color:#6B5444;margin-left:4px">{{t.prog}}</span>
+</div>
+<div style="display:flex;gap:8px">
+<button style="flex-grow:1;height:44px;border-radius:12px;border:0;background:#590202;color:#F3E2C1;font-weight:600;font-size:14px">Mandar a revisión</button>
+<a href="#" style="height:44px;padding:0 12px;border-radius:12px;border:1px solid #E0CCA8;display:flex;align-items:center;font-size:13px;text-decoration:none">{{t.tool}}</a>
+<button aria-label="Pedir ayuda" style="width:44px;height:44px;border-radius:12px;border:1px solid #E0CCA8;background:#fff;color:#590202;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6M12 17h.01"/></svg></button>
+</div>
+</article>
+</sc-for>
+</section>
+
+<section style="margin:20px 16px 0;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="margin:0;font-family:'Chakra Petch';font-weight:700;font-size:19px;color:#590202">Tus metas rumbo a Girl Powered</h2><span style="font-size:12px;color:#6B5444">metas del robot</span></div>
+<sc-for list="{{metas}}" as="m" hint-placeholder-count="2">
+<div style="background:#fff;border:1px solid #E9D9BC;border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px"><span style="font-family:'IBM Plex Mono';color:#6B5444">{{m.r}} · {{m.f}}</span><span style="padding:3px 9px;border-radius:999px;background:{{p.tint}};color:{{p.ink}};font-weight:600">{{m.mine}}</span></div><strong style="font-family:'Chakra Petch';font-weight:600;font-size:17px;line-height:1.25">{{m.t}}</strong><div role="img" aria-label="{{m.d}} de {{m.n}} tareas listas" style="display:flex;align-items:center"><div style="flex-grow:1;height:22px;border:2px solid #590202;border-radius:6px;padding:2px;box-sizing:border-box;display:flex;gap:2px"><sc-for list="{{m.segs}}" as="sg" hint-placeholder-count="4"><span style="flex:1;border-radius:3px;background:{{sg.bg}}"></span></sc-for></div><div style="width:4px;height:9px;background:#590202"></div></div><span style="font-size:12px;color:#5A4335">{{m.d}} de {{m.n}} tareas del equipo listas</span></div>
+</sc-for>
+</section>
+
+<section style="margin:20px 0 0;display:flex;flex-direction:column;gap:10px">
+<h2 style="margin:0 16px;font-family:'Chakra Petch';font-weight:700;font-size:18px;color:#590202">Logros del equipo</h2>
+<div style="display:flex;gap:10px;padding:0 16px;overflow:hidden">
+<div style="flex:0 0 200px;background:#590202;color:#F3E2C1;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:6px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E9A84F" stroke-width="2.2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span style="font-size:14px;line-height:1.35">Diego terminó el chasis de BioBuzz</span><span style="font-size:11px;opacity:.8">hace 2 h</span></div>
+<div style="flex:0 0 200px;background:#fff;border:1px solid #E9D9BC;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:6px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9A590C" stroke-width="2.2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span style="font-size:14px;line-height:1.35">Karla subió 12 fotos al Notebook</span><span style="font-size:11px;color:#6B5444">ayer</span></div>
+</div>
+</section>
+
+<nav aria-label="Principal" style="margin-top:auto;background:#fff;border-top:1px solid #E9D9BC;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:6px 8px 14px">
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;text-decoration:none;color:#590202;font-size:11px;font-weight:600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="2"/><rect x="14" y="3" width="7" height="11" rx="2"/></svg>Mi tablero</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;text-decoration:none;color:#6B5444;font-size:11px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4.5"/></svg>Mi área</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;text-decoration:none;color:#6B5444;font-size:11px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/></svg>Logros</a>
+<a href="#" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;text-decoration:none;color:#6B5444;font-size:11px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Perfil</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"persona":{"editor":"enum","options":["programacion","mecanica","logistica"],"default":"programacion"},"$preview":{"width":390,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      programacion: { name: 'Ana', ini: 'AL', area: 'Programación', color: '#2F5D8A', tint: '#E2EAF3', robot: 'FTC · BioBuzz', done: 3, total: 4, msg: 'Te falta 1 para la carga completa.', dots: [0, 1, 0, 0, 1, 0, 0],
+        ink: '#2F5D8A', metas: [{ t: 'Autonomous de 15 s probado en la cancha', r: 'FTC · BioBuzz', f: 'Vie 28', d: 3, n: 5, mine: '1 tarea tuya' }, { t: 'Elevador DR4B subiendo sin forzar', r: 'VEX · Override', f: 'Jue 27', d: 2, n: 4, mine: '1 tarea tuya' }],
+        tasks: [
+          { icon: 'code', robot: 'FTC · BioBuzz', title: 'Calibrar la odometría del chasis', why: 'sin esto el autonomous no sabe dónde está y se pasa de la línea.', due: 'Hoy 18:00', urgent: true, done: 2, steps: 3, tool: 'GitHub' },
+          { icon: 'code', robot: 'VEX · Override', title: 'Clase Elevador con límites', why: 'que el elevador no fuerce los motores al subir.', due: 'Vie 27', urgent: false, done: 1, steps: 4, tool: 'GitHub' } ] },
+      mecanica: { name: 'Luis', ini: 'LM', area: 'Mecánica', color: '#9A590C', tint: '#F6E3CC', robot: 'VEX · Override', done: 2, total: 5, msg: 'Vas a la mitad. Hoy puedes cargar una más.', dots: [0, 1, 0, 1, 0, 0, 0],
+        ink: '#7A3E06', metas: [{ t: 'Elevador DR4B subiendo sin forzar', r: 'VEX · Override', f: 'Jue 27', d: 2, n: 4, mine: '2 tareas tuyas' }, { t: 'Garra neumática montada y probada', r: 'VEX · Override', f: 'Sáb 29', d: 0, n: 3, mine: '1 tarea tuya' }],
+        tasks: [
+          { icon: 'wrench', robot: 'VEX · Override', title: 'Ensamblar la torre del DR4B', why: 'es la base del elevador nuevo; sin ella no se puede probar nada más.', due: 'Hoy 17:00', urgent: true, done: 3, steps: 5, tool: 'Onshape' },
+          { icon: 'wrench', robot: 'VEX · Override', title: 'Diseñar la garra neumática', why: 'más fuerza de agarre con menos peso que la garra de motor.', due: 'Jue 26', urgent: false, done: 0, steps: 3, tool: 'Onshape' } ] },
+      logistica: { name: 'Sofía', ini: 'SR', area: 'Logística', color: '#3E6B48', tint: '#E1ECE2', robot: 'Ambos robots', done: 4, total: 5, msg: 'Casi llena. Una más y cierras la semana.', dots: [0, 0, 0, 1, 1, 0, 0],
+        ink: '#2E5A36', metas: [{ t: 'Engineering Notebook con fotos del proceso', r: 'Ambos robots', f: 'Sáb 29', d: 6, n: 8, mine: '2 tareas tuyas' }, { t: 'Redes listas para el día del evento', r: 'Ambos robots', f: 'Vie 28', d: 1, n: 3, mine: '1 tarea tuya' }],
+        tasks: [
+          { icon: 'camera', robot: 'VEX · Override', title: 'Fotos del DR4B para el Notebook', why: 'los jueces califican el proceso, no solo el robot terminado.', due: 'Jue 26', urgent: false, done: 2, steps: 4, tool: 'Canva' },
+          { icon: 'mega', robot: 'Ambos robots', title: 'Post: presentación del robot', why: 'los patrocinadores nos conocen por redes.', due: 'Vie 27', urgent: false, done: 1, steps: 2, tool: 'Canva' } ] }
+    };
+    const p = P[this.props.persona] || P.programacion;
+    const segs = Array.from({ length: p.total }, (_, i) => ({ bg: i < p.done ? '#E9A84F' : 'rgba(243,226,193,.14)', charging: i === p.done }));
+    const L = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+    const days = L.map((l, i) => ({ l, n: String(23 + i), bg: i === 1 ? '#590202' : '#fff', fg: i === 1 ? '#F3E2C1' : '#2A1A12', dot: p.dots[i] ? (i === 1 ? '#E9A84F' : p.color) : 'transparent' }));
+    const tasks = p.tasks.map((t) => ({ ...t, isCode: t.icon === 'code', isWrench: t.icon === 'wrench', isCamera: t.icon === 'camera', isMega: t.icon === 'mega',
+      dueBg: t.urgent ? '#FCE7D6' : '#E3EEDF', dueFg: t.urgent ? '#7A3E06' : '#2E5A36', prog: t.done + '/' + t.steps, tool: 'Abrir ' + t.tool,
+      steps: Array.from({ length: t.steps }, (_, i) => ({ bg: i < t.done ? '#9A590C' : '#EFE2C8' })) }));
+    const metas = p.metas.map((m) => ({ ...m, segs: Array.from({ length: m.n }, (_, i) => ({ bg: i < m.d ? '#9A590C' : '#EFE2C8' })) }));
+    return { p: { ...p, left: p.tasks.length }, segs, days, tasks, metas };
+  }
+}
+</script>
+</body>
+</html>

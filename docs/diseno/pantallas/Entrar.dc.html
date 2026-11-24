@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Entrar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif}
+a{color:#590202}a:hover{color:#3a0101}
+input,button{font-family:inherit}
+@keyframes fill{0%{opacity:.15}100%{opacity:1}}
+.seg{animation:fill .5s ease-out both}
+@media (prefers-reduced-motion:reduce){.seg{animation:none}}
+:focus-visible{outline:3px solid #E9A84F;outline-offset:2px}
+</style>
+</helmet>
+<div style="width:390px;height:880px;box-sizing:border-box;background:#590202;color:#F3E2C1;display:flex;flex-direction:column;padding:40px 24px 24px;gap:22px">
+<div style="display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:14px"><div style="width:72px;height:72px;border-radius:20px;border:2px dashed rgba(243,226,193,.6);display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;line-height:1.2;color:#F3E2C1;flex-shrink:0">Logo<br>Zero-Ohms</div><div role="img" aria-label="Zero-Ohms, 13" style="display:flex;align-items:center;gap:8px;font-family:'Chakra Petch';font-weight:700;font-size:20px;letter-spacing:.06em"><span aria-hidden="true">ZERΩ</span><svg width="22" height="19" viewBox="0 0 28 24" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="3"/><circle cx="14" cy="4" r="3"/><circle cx="22" cy="4" r="3"/><rect x="0" y="10" width="28" height="5" rx="1.5"/><rect x="0" y="18" width="28" height="5" rx="1.5"/></svg><span aria-hidden="true">ΩHMS</span></div></div>
+<span style="font-family:'IBM Plex Mono';font-size:12px;letter-spacing:.12em;opacity:.85">ROBOTICS · PREPA ESTATAL 13</span>
+<h1 style="margin:0;font-family:'Chakra Petch';font-weight:700;font-size:54px;line-height:.95">Tablero<br>Zero</h1>
+<p style="margin:0;font-size:15px;line-height:1.45;max-width:290px">Tus pendientes del taller, lo que ya cargaste y lo que le toca al robot.</p>
+</div>
+
+<form style="background:#FBF4E6;color:#2A1A12;border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;flex-direction:column;gap:6px">
+<label for="u2" style="font-size:13px;font-weight:600;color:#590202">Usuario</label>
+<input id="u2" value="ana.l" autocomplete="username" autocapitalize="none" style="height:52px;border-radius:12px;border:2px solid #E0CCA8;padding:0 14px;font-size:17px;background:#fff;color:#2A1A12;font-family:'IBM Plex Mono'">
+</div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<label for="p2" style="font-size:13px;font-weight:600;color:#590202">Contraseña</label>
+<div style="display:flex;gap:8px">
+<input id="p2" type="password" value="cobre-427" autocomplete="current-password" style="flex-grow:1;min-width:0;height:52px;border-radius:12px;border:2px solid #590202;padding:0 14px;font-size:17px;background:#fff;color:#2A1A12">
+<button type="button" aria-label="Mostrar contraseña" style="width:52px;height:52px;border-radius:12px;border:2px solid #E0CCA8;background:#fff;color:#590202;display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+</div>
+</div>
+<label style="display:flex;align-items:center;gap:10px;font-size:14px;min-height:44px"><input type="checkbox" checked style="width:22px;height:22px;accent-color:#590202">Recordarme en este celular</label>
+<a href="Main.dc.html" style="text-decoration:none;height:56px;border-radius:14px;border:0;background:#590202;color:#F3E2C1;font-size:17px;font-weight:600;font-family:'Chakra Petch';display:flex;align-items:center;justify-content:center;gap:10px">Entrar al taller<svg width="20" height="20" viewBox="0 0 24 24" fill="#E9A84F" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></a>
+<a href="#" style="text-align:center;font-size:14px;padding:8px 0">Olvidé mi contraseña</a>
+</form>
+
+<div style="margin-top:auto;display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:16px;border:1px solid rgba(243,226,193,.35)"><span aria-hidden="true" style="width:44px;height:44px;border-radius:12px;background:#F3E2C1;color:#590202;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4.5"/></svg></span><span style="display:flex;flex-direction:column;gap:2px"><strong style="font-size:15px">¿Eres mamá, papá o tutor?</strong><span style="font-size:13px;opacity:.92">Entra con el usuario y la contraseña de tu ficha de acceso.</span></span></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":880}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
