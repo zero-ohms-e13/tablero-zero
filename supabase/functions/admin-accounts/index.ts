@@ -23,11 +23,14 @@ async function usuarioLibre(srv: SupabaseClient, base: string): Promise<string> 
   throw new Error('No hay usuario libre');
 }
 
+// Acepta la temporal que el coach ve en pantalla solo si sigue el formato palabra-número.
+const TEMPORAL_RE = /^[a-z]{2,10}-\d{3}$/;
+
 async function crearCuenta(
   srv: SupabaseClient,
-  d: { nombre: string; usuario: string; rol: string; color: string },
+  d: { nombre: string; usuario: string; rol: string; color: string; password?: string },
 ): Promise<Ficha> {
-  const password = passwordTemporal();
+  const password = d.password && TEMPORAL_RE.test(d.password) ? d.password : passwordTemporal();
   const { data, error } = await srv.auth.admin.createUser({
     email: correoDe(d.usuario),
     password,
@@ -96,7 +99,7 @@ Deno.serve(async (req) => {
         const color = String(body.color ?? COLORES[Math.floor(Math.random() * COLORES.length)]);
         const fichas: Ficha[] = [];
 
-        const cuenta = await crearCuenta(srv, { nombre, usuario, rol, color });
+        const cuenta = await crearCuenta(srv, { nombre, usuario, rol, color, password: typeof body.password === 'string' ? body.password : undefined });
         fichas.push(cuenta);
 
         if (rol === 'alumno' && membresias.length) {
@@ -168,6 +171,12 @@ Deno.serve(async (req) => {
         const { error } = await srv.auth.admin.deleteUser(id); // profiles y relaciones caen en cascada
         if (error) throw new Error(error.message);
         return json(req, { ok: true });
+      }
+
+      // Usuarios bloqueados ahora por intentos fallidos (para mostrar "Bloqueada").
+      case 'bloqueos': {
+        const { data } = await srv.from('intentos_login').select('usuario, bloqueado_hasta').gt('bloqueado_hasta', new Date().toISOString());
+        return json(req, { bloqueos: data ?? [] });
       }
 
       default:

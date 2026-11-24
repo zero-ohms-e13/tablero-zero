@@ -21,3 +21,10 @@
   .seg, .rayo { animation: none !important; }
   * { transition: none !important; }
 }
+
+/* Imprimir solo las fichas de acceso */
+@media print {
+  body * { visibility: hidden; }
+  #fichas-imprimir, #fichas-imprimir * { visibility: visible; }
+  #fichas-imprimir { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+}
