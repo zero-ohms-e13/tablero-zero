@@ -73,3 +73,28 @@ export const ETIQUETA_ESTADO: Record<Estado, string> = {
 };
 
 export const ROBOT_NOMBRE: Record<Robot, string> = { VEX: 'VEX · Override', FTC: 'FTC · BioBuzz', Ambos: 'Ambos robots' };
+
+// ---------- Materiales del equipo ----------
+export type CategoriaMaterial = 'programacion' | 'diseno' | 'documentacion' | 'pruebas' | 'otro';
+export const CATEGORIAS_MATERIAL: { id: CategoriaMaterial; texto: string; icono: string }[] = [
+  { id: 'programacion', texto: 'Programación', icono: 'codigo' },
+  { id: 'diseno', texto: 'Mecánica y diseño', icono: 'engrane' },
+  { id: 'documentacion', texto: 'Documentación', icono: 'documento' },
+  { id: 'pruebas', texto: 'Pruebas y videos', icono: 'camara' },
+  { id: 'otro', texto: 'Otro', icono: 'estrella' },
+];
+export type AdjuntoMaterial = {
+  id: string; material_id: string; tipo: 'archivo' | 'enlace'; clase: 'imagen' | 'pdf' | 'codigo' | 'enlace';
+  ruta: string | null; url: string | null; nombre: string; tamano: number | null; orden: number;
+};
+export type Material = {
+  id: string; autor_id: string; titulo: string; nota: string | null; categoria: CategoriaMaterial;
+  area_id: string | null; tarea_id: string | null; estado: 'borrador' | 'publicada';
+  creado_at: string; publicado_at: string | null; editado_at: string | null; retirado_at: string | null; retirado_por: string | null;
+  material_adjuntos: AdjuntoMaterial[];
+  material_comentarios: { count: number }[];
+};
+export type ComentarioMaterial = {
+  id: string; material_id: string; autor_id: string; texto: string; creado_at: string; editado_at: string | null; retirado_at: string | null;
+};
+export type AutorMaterial = { id: string; nombre_visible: string; iniciales: string; color: string };

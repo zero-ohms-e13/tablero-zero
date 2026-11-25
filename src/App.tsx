@@ -18,6 +18,7 @@ const Perfil = lazy(() => import('./pages/Perfil'));
 const Avisos = lazy(() => Varias.then((m) => ({ default: m.Avisos })));
 const Logros = lazy(() => import('./pages/Logros'));
 const Metas = lazy(() => import('./pages/Metas'));
+const Materiales = lazy(() => import('./pages/Materiales'));
 const BitacoraMeta = lazy(() => import('./pages/Metas').then((m) => ({ default: m.BitacoraMeta })));
 const Familia = lazy(() => Varias.then((m) => ({ default: m.Familia })));
 const Estados = lazy(() => Varias.then((m) => ({ default: m.Estados })));
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="/avisos" element={<Protegida><Avisos /></Protegida>} />
           <Route path="/logros" element={<Protegida roles={['alumno', 'coach']}><Logros /></Protegida>} />
           <Route path="/coach/logros" element={<Protegida roles={['coach']}><Logros /></Protegida>} />
+          <Route path="/materiales" element={<Protegida roles={['alumno', 'coach']}><Materiales /></Protegida>} />
           <Route path="/coach/metas" element={<Protegida roles={['coach']}><Metas /></Protegida>} />
           <Route path="/coach/metas/:id" element={<Protegida roles={['coach']}><BitacoraMeta /></Protegida>} />
           <Route path="/estados" element={<Estados />} />

@@ -317,9 +317,10 @@ export function BottomNav() {
     </NavLink>
   );
   return (
-    <nav aria-label="Principal" className="fixed inset-x-0 bottom-0 z-30 mx-auto grid max-w-[480px] grid-cols-4 border-t border-linea bg-white px-2 pt-1.5" style={{ paddingBottom: 'max(14px, env(safe-area-inset-bottom))' }}>
+    <nav aria-label="Principal" className="fixed inset-x-0 bottom-0 z-30 mx-auto grid max-w-[480px] grid-cols-5 border-t border-linea bg-white px-2 pt-1.5" style={{ paddingBottom: 'max(14px, env(safe-area-inset-bottom))' }}>
       {item('/', 'tablero', 'Mi tablero', true)}
       {item('/area', 'equipo', 'Mi área')}
+      {item('/materiales', 'documento', 'Materiales')}
       {item('/logros', 'trofeo', 'Logros')}
       {item('/perfil', 'persona', 'Perfil')}
     </nav>
