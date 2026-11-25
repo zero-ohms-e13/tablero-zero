@@ -20,13 +20,15 @@ create table storage.objects (id uuid primary key default gen_random_uuid(), buc
 alter table storage.objects enable row level security;
 -- Como Supabase: las funciones nuevas nacen ejecutables por anon/authenticated (un revoke posterior sí cuenta)
 alter default privileges in schema public grant execute on functions to anon, authenticated;
+-- Como Supabase: las tablas nuevas nacen con todos los privilegios para anon/authenticated/service_role;
+-- la RLS y los revoke de las migraciones son los que realmente restringen.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 `;
 
 const GRANTS = `
 grant usage on schema public, auth, storage to anon, authenticated, service_role;
-grant select, insert, update, delete on all tables in schema public to authenticated, service_role;
 grant select, insert, update, delete on storage.objects to authenticated;
-grant usage, select on all sequences in schema public to authenticated;
 grant execute on function auth.uid() to anon, authenticated;
 -- Solo para pruebas: ejecuta SQL y devuelve el mensaje de error (o null si pasó).
 create function public.tz_probar(q text) returns text language plpgsql as $$
