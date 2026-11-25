@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     ahora: () => new Date(),
   };
 
-  const r = await procesarEntrada(body, ipCliente(req.headers.get('x-forwarded-for')), deps);
+  const r = await procesarEntrada(body, ipCliente((n) => req.headers.get(n)), deps);
   // Limpieza ocasional de contadores viejos (no afecta la respuesta)
   if (Math.random() < 0.02) srv.rpc('purgar_intentos').then(() => {}, () => {});
   return json(req, r.body, r.status);

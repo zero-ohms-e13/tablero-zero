@@ -26,12 +26,17 @@ export type Deps = {
 
 export type Respuesta = { status: number; body: Record<string, unknown> };
 
-/** IP del cliente: el ÚLTIMO valor de X-Forwarded-For es el que agrega el proxy de confianza;
- *  los anteriores los puede inventar el cliente. Sin cabecera, un cubo común. */
-export function ipCliente(xff: string | null | undefined): string {
-  const partes = (xff ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-  const ip = partes[partes.length - 1] ?? '';
-  return /^[0-9a-fA-F:.]{2,45}$/.test(ip) ? ip : 'sin-ip';
+/** IP del cliente, verificada en el gateway de Supabase (proyecto de pruebas, 2026-11-25):
+ *  - `sb-forwarded-for` la fija el gateway con la IP real e ignora el valor que mande el cliente.
+ *  - `cf-connecting-ip` la fija Cloudflare; una petición que intenta falsificarla se rechaza (error 1000).
+ *  - El ÚLTIMO valor de X-Forwarded-For es un nodo de Cloudflare que cambia en cada petición: no sirve.
+ *  Sin ninguna de las dos (o con un valor no válido) → 'sin-ip', que no comparte cupo ni bloqueo. */
+export function ipCliente(cabecera: (nombre: string) => string | null | undefined): string {
+  for (const nombre of ['sb-forwarded-for', 'cf-connecting-ip']) {
+    const v = (cabecera(nombre) ?? '').trim();
+    if (/^[0-9a-fA-F:.]{2,45}$/.test(v)) return v;
+  }
+  return 'sin-ip';
 }
 
 export async function procesarEntrada(entrada: { usuario?: unknown; password?: unknown }, ip: string, deps: Deps): Promise<Respuesta> {

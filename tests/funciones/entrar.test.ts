@@ -100,10 +100,15 @@ describe('SEG-004 · entrar', () => {
     expect(Object.keys(r.body)).toEqual(['codigo']);
   });
 
-  it('IP del cliente: se usa el último valor de X-Forwarded-For (el del proxy)', () => {
-    expect(ipCliente('6.6.6.6, 203.0.113.9')).toBe('203.0.113.9');
-    expect(ipCliente('203.0.113.9')).toBe('203.0.113.9');
-    expect(ipCliente(null)).toBe('sin-ip');
-    expect(ipCliente('<script>')).toBe('sin-ip');
+  it('IP del cliente: sb-forwarded-for, luego cf-connecting-ip; nunca el último X-Forwarded-For', () => {
+    const de = (h: Record<string, string>) => (n: string) => h[n] ?? null;
+    // Forma observada en el gateway: XFF = cliente, cliente, nodo de Cloudflare (cambia en cada petición)
+    const xff = '203.0.113.9, 203.0.113.9, 198.51.100.44';
+    expect(ipCliente(de({ 'sb-forwarded-for': '203.0.113.9', 'cf-connecting-ip': '203.0.113.9', 'x-forwarded-for': xff }))).toBe('203.0.113.9');
+    expect(ipCliente(de({ 'cf-connecting-ip': '203.0.113.9', 'x-forwarded-for': xff }))).toBe('203.0.113.9');
+    expect(ipCliente(de({ 'x-forwarded-for': xff }))).toBe('sin-ip');
+    expect(ipCliente(de({ 'sb-forwarded-for': '6.6.6.6, 7.7.7.7' }))).toBe('sin-ip'); // lista, no una IP
+    expect(ipCliente(de({ 'sb-forwarded-for': '<script>' }))).toBe('sin-ip');
+    expect(ipCliente(de({}))).toBe('sin-ip');
   });
 });
