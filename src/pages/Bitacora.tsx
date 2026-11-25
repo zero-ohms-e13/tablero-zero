@@ -37,7 +37,8 @@ export default function Bitacora() {
   const hist = useMisBitacoras(perfil?.id);
   const [recargas, setRecargas] = useState(0);
   const b = q.data;
-  const editable = semanaAbierta(lunes) && (!b || b.estado === 'borrador' || b.estado === 'devuelta');
+  // Misma regla que la base: semana actual y 4 anteriores; una devuelta se corrige aunque sea más antigua
+  const editable = b?.estado === 'devuelta' || (semanaAbierta(lunes) && (!b || b.estado === 'borrador'));
   const { data: vence = new Date() } = usePlazoBitacora(lunes);
   const plazo = plazoTexto(vence);
   const ir = (l: string) => setParams(l === actual ? {} : { semana: l }, { replace: true });
@@ -78,7 +79,7 @@ export default function Bitacora() {
               </section>
             )}
             {editable ? (
-              <Editor key={`${lunes}-${b?.id ?? 'nueva'}-${recargas}`} lunes={lunes} inicial={b ?? null} onRecargar={async () => { await q.refetch(); setRecargas((n) => n + 1); }} />
+              <Editor key={`${lunes}-${recargas}`} lunes={lunes} inicial={b ?? null} onRecargar={async () => { await q.refetch(); setRecargas((n) => n + 1); }} />
             ) : b ? (
               <Lectura b={b} />
             ) : (
@@ -119,8 +120,10 @@ function Editor({ lunes, inicial, onRecargar }: { lunes: string; inicial: TBitac
   const enCurso = useRef<Promise<boolean> | null>(null);
   const ultimo = useRef(d);
   ultimo.current = d;
+  const sucio = useRef(false); // hay algo escrito que no ha llegado al servidor
   const cambiar = (p: Partial<DatosBitacora>) => {
     setD((x) => ({ ...x, ...p }));
+    sucio.current = true;
     setEstado('cambios');
   };
 
@@ -130,8 +133,10 @@ function Editor({ lunes, inicial, onRecargar }: { lunes: string; inicial: TBitac
     const p = (async () => {
       setEstado('guardando');
       try {
-        const r = await guardarRpc({ lunes, version: servidor.current.version, datos: ultimo.current });
+        const enviado = ultimo.current;
+        const r = await guardarRpc({ lunes, version: servidor.current.version, datos: enviado });
         servidor.current = { id: r.id, version: r.version };
+        if (ultimo.current === enviado) sucio.current = false; // si escribió mientras guardaba, sigue pendiente
         setEstado((e) => (e === 'guardando' ? 'guardado' : e));
         setError(null);
         return true;
@@ -147,6 +152,39 @@ function Editor({ lunes, inicial, onRecargar }: { lunes: string; inicial: TBitac
     enCurso.current = p;
     return p;
   }, [guardarRpc, lunes]);
+
+  // Si llega del servidor una versión más nueva (p. ej. al volver a una semana que se guardó al salir) y no
+  // hay nada escrito pendiente, se adopta; si hay cambios pendientes, el guardado detectará el conflicto.
+  useEffect(() => {
+    if (inicial && inicial.version > servidor.current.version && !sucio.current) {
+      servidor.current = { id: inicial.id, version: inicial.version };
+      setD(deServidor(inicial));
+      setEstado('guardado');
+    }
+  }, [inicial]);
+
+  // No perder lo escrito: guarda lo pendiente al cambiar de semana o de pantalla (desmontar), al ocultar
+  // la app y al cerrar; si se cierra con cambios sin guardar, el navegador pide confirmar.
+  useEffect(() => {
+    const pendiente = () => {
+      if (sucio.current) void guardarAhora();
+    };
+    const oculto = () => document.visibilityState === 'hidden' && pendiente();
+    const cerrar = (e: BeforeUnloadEvent) => {
+      if (!sucio.current) return;
+      pendiente();
+      e.preventDefault();
+    };
+    document.addEventListener('visibilitychange', oculto);
+    window.addEventListener('pagehide', pendiente);
+    window.addEventListener('beforeunload', cerrar);
+    return () => {
+      document.removeEventListener('visibilitychange', oculto);
+      window.removeEventListener('pagehide', pendiente);
+      window.removeEventListener('beforeunload', cerrar);
+      pendiente();
+    };
+  }, [guardarAhora]);
 
   useEffect(() => {
     if (estado !== 'cambios') return;

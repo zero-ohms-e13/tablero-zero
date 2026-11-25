@@ -19,7 +19,7 @@ export type Bitacora = {
 export type DatosBitacora = Pick<Bitacora, 'aporte' | 'aprendizaje' | 'siguiente' | 'necesita_ayuda' | 'texto_libre'> & { evidencias: EvidenciaBitacora[] };
 export type FilaResumen = {
   alumno_id: string; nombre_visible: string; iniciales: string; color: string; bitacora_id: string | null;
-  estado: 'pendiente' | 'entregada' | 'devuelta' | 'revisada'; tarde: boolean; atrasada: boolean; entregada_at: string | null; necesita_ayuda: boolean;
+  estado: 'pendiente' | 'entregada' | 'devuelta' | 'revisada'; tarde: boolean; atrasada: boolean; entregada_at: string | null; necesita_ayuda: boolean; exigible: boolean;
 };
 
 export const PREGUNTAS = [
@@ -77,9 +77,15 @@ export const useMisBitacoras = (alumno: string | undefined) =>
   });
 
 export function useGuardarBitacora() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (v: { lunes: string; version: number; datos: DatosBitacora }) =>
       ok(await supabase.rpc('guardar_bitacora', { p_semana: v.lunes, p_version: v.version, p_datos: v.datos })) as { id: string; version: number },
+    // Marca la copia en memoria como vieja (sin recargar ahora): al volver a esa semana se trae la versión guardada
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['bitacora'], predicate: (q) => q.queryKey[2] === v.lunes, refetchType: 'none' });
+      qc.invalidateQueries({ queryKey: ['bitacoras'], refetchType: 'none' });
+    },
   });
 }
 
@@ -163,4 +169,19 @@ export function plazoTexto(v: Date, ahora = new Date()) {
   const horas = (v.getTime() - ahora.getTime()) / 3600_000;
   if (horas < 24) return { texto: `Vence ${cuandoVence(v)} (faltan ${Math.max(1, Math.round(horas))} h)`, tono: 'urgente' as const };
   return { texto: `Vence ${cuandoVence(v)}`, tono: 'normal' as const };
+}
+
+/** Primera semana exigible (antes de ella no se marcan atrasos). */
+export const useInicioBitacoras = () =>
+  useQuery({ queryKey: ['inicio_bitacoras'], queryFn: async () => ok(await supabase.rpc('inicio_bitacoras')) as string, staleTime: 300_000 });
+
+export function useFijarInicio() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (lunes: string) => ok(await supabase.rpc('fijar_inicio_bitacoras', { p_semana: lunes })),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['inicio_bitacoras'] });
+      qc.invalidateQueries({ queryKey: ['resumen_bitacoras'] });
+    },
+  });
 }

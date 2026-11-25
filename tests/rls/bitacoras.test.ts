@@ -80,12 +80,11 @@ describe('Bitácora · borrador, entrega y conflictos', () => {
 });
 
 describe('Bitácora · privacidad', () => {
-  it('solo la ven su autor y el coach/mentor; compañeros, tutor y anónimo no', async () => {
+  it('solo la ven su autor y el coach principal; mentor, compañeros, tutor y anónimo no', async () => {
     const [a] = await q<{ id: string }>(`select id from bitacoras where alumno_id = '${U.ana}' and semana = '${ACTUAL}'`);
     expect(await b.como(U.ana, `select 1 from bitacoras where id = '${a.id}'`)).toHaveLength(1);
     expect(await b.como(U.coach, `select 1 from bitacoras where id = '${a.id}'`)).toHaveLength(1);
-    expect(await b.como(U.aux, `select 1 from bitacoras where id = '${a.id}'`)).toHaveLength(1);
-    for (const quien of [U.marco, U.diego, U.tutorAna]) {
+    for (const quien of [U.aux, U.marco, U.diego, U.tutorAna]) {
       expect(await b.como(quien, `select 1 from bitacoras where id = '${a.id}'`), quien).toHaveLength(0);
       expect(await b.como(quien, `select 1 from bitacora_evidencias e join bitacoras x on x.id = e.bitacora_id where x.alumno_id = '${U.ana}'`), quien).toHaveLength(0);
     }
@@ -164,7 +163,8 @@ describe('Bitácora · revisión del coach', () => {
 
   it('el coach la marca revisada con retroalimentación; el alumno ya no la cambia', async () => {
     const [a] = await q<{ id: string; version: number }>(`select id, version from bitacoras where alumno_id = '${U.ana}' and semana = '${ACTUAL}'`);
-    await uno(U.aux, `public.revisar_bitacora('${a.id}', '¡Bien documentado!')`);
+    expect(await falla(U.aux, `public.revisar_bitacora('${a.id}', 'del mentor')`)).toMatch(/Solo el coach/);
+    await uno(U.coach, `public.revisar_bitacora('${a.id}', '¡Bien documentado!')`);
     const [r] = await b.como<{ estado: string; retro: string }>(U.ana, `select estado, retro from bitacoras where id = '${a.id}'`);
     expect(r).toEqual({ estado: 'revisada', retro: '¡Bien documentado!' });
     expect(await falla(U.ana, `public.revisar_bitacora('${a.id}', 'me la reviso yo')`)).toMatch(/Solo el coach/);
@@ -172,6 +172,7 @@ describe('Bitácora · revisión del coach', () => {
   });
 
   it('el seguimiento lista a todos los alumnos activos con su estado; solo el coach lo ve', async () => {
+    await b.como(U.coach, `select public.fijar_inicio_bitacoras('${PASADA}')`); // la semana pasada ya es exigible
     const r = await b.como<{ nombre_visible: string; estado: string; atrasada: boolean; tarde: boolean }>(U.coach, `select * from public.resumen_bitacoras('${ACTUAL}')`);
     expect(r).toHaveLength(6); // los 6 alumnos activos del seed
     const de = (n: string) => r.find((x) => x.nombre_visible === n)!;
@@ -182,6 +183,27 @@ describe('Bitácora · revisión del coach', () => {
     expect(pas.find((x) => x.nombre_visible === 'Diego Pérez')).toMatchObject({ estado: 'entregada', tarde: true, atrasada: false });
     expect(pas.find((x) => x.nombre_visible === 'Luis Medina')).toMatchObject({ estado: 'pendiente', atrasada: true });
     expect(await falla(U.ana, `public.resumen_bitacoras('${ACTUAL}')`)).toMatch(/Solo el coach/);
+    expect(await falla(U.aux, `public.resumen_bitacoras('${ACTUAL}')`)).toMatch(/Solo el coach/);
+  });
+
+  it('antes de la primera semana exigible no se marcan atrasos; solo el coach la cambia', async () => {
+    await b.como(U.coach, `select public.fijar_inicio_bitacoras('${ACTUAL}')`);
+    const pas = await b.como<{ nombre_visible: string; atrasada: boolean; exigible: boolean }>(U.coach, `select * from public.resumen_bitacoras('${PASADA}')`);
+    expect(pas.find((x) => x.nombre_visible === 'Luis Medina')).toMatchObject({ atrasada: false, exigible: false });
+    expect(await falla(U.aux, `public.fijar_inicio_bitacoras('${PASADA}')`)).toMatch(/Solo el coach/);
+    expect(await falla(U.ana, `public.fijar_inicio_bitacoras('${PASADA}')`)).toMatch(/Solo el coach/);
+    await b.como(U.coach, `select public.fijar_inicio_bitacoras('${PASADA}')`);
+  });
+
+  it('una bitácora devuelta se puede corregir aunque esté fuera de la ventana de 4 semanas', async () => {
+    const [v] = await q<{ s: string }>(`select (public.semana_merida() - 42)::text as s`);
+    const [x] = await q<{ id: string }>(`insert into bitacoras (alumno_id, semana, estado, aporte, aprendizaje, siguiente, entregada_at, primera_entrega_at) values ('${U.luis}', '${v.s}', 'entregada', 'a', 'b', 'c', now(), now()) returning id`);
+    expect(await falla(U.luis, `public.guardar_bitacora('${v.s}', 1, '${datos()}'::jsonb)`)).toMatch(/ya se entregó|no está abierta/);
+    await uno(U.coach, `public.devolver_bitacora('${x.id}', 'Agrega qué probaste.')`);
+    const [d] = await q<{ version: number }>(`select version from bitacoras where id = '${x.id}'`);
+    const g = await guardar(U.luis, v.s, d.version, { aporte: 'Corregida' });
+    await uno(U.luis, `public.entregar_bitacora('${x.id}', ${g.version})`);
+    expect((await q<{ estado: string }>(`select estado from bitacoras where id = '${x.id}'`))[0].estado).toBe('entregada');
   });
 });
 

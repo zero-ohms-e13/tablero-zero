@@ -5,15 +5,28 @@ import { LayoutCoach } from '../components/Coach';
 import { Icon } from '../components/Icon';
 import { Avatar, Boton, Campo, Cargando, EmptyState, Sheet, claseCampo, useToast } from '../components/ui';
 import {
-  ETIQUETA_ESTADO_BITACORA, lunesDe, rangoSemana, sumarSemanas, useBitacora, useResumenBitacoras, useRevisarBitacora, usePlazoBitacora, useFijarPlazo, cuandoVence, esOmision,
+  ETIQUETA_ESTADO_BITACORA, lunesDe, rangoSemana, sumarSemanas, useBitacora, useResumenBitacoras, useRevisarBitacora, usePlazoBitacora, useFijarPlazo, cuandoVence, esOmision, useInicioBitacoras, useFijarInicio,
   type FilaResumen,
 } from '../lib/bitacoras';
 import { aInputLocal, deInputLocal, haceCuanto } from '../lib/fechas';
 import { Lectura } from './Bitacora';
+import { useSesion } from '../lib/sesion';
 
 type Filtro = 'todas' | 'pendiente' | 'entregada' | 'atrasada' | 'ayuda';
 
 export default function BitacorasCoach() {
+  const { esCoachPrincipal } = useSesion();
+  if (!esCoachPrincipal) {
+    return (
+      <LayoutCoach>
+        <EmptyState titulo="Las bitácoras son privadas" texto="Solo las leen cada alumno y el coach principal." />
+      </LayoutCoach>
+    );
+  }
+  return <Seguimiento />;
+}
+
+function Seguimiento() {
   const [params, setParams] = useSearchParams();
   const actual = lunesDe();
   const pedida = params.get('semana');
@@ -37,6 +50,18 @@ export default function BitacorasCoach() {
   const { data: vence = new Date() } = usePlazoBitacora(lunes);
   const vencio = new Date() > vence;
   const [cambiarPlazo, setCambiarPlazo] = useState(false);
+  const { data: inicio } = useInicioBitacoras();
+  const fijarInicio = useFijarInicio();
+  const toast = useToast();
+  const exigible = !inicio || lunes >= inicio;
+  async function exigirDesdeAqui() {
+    try {
+      await fijarInicio.mutateAsync(lunes);
+      toast({ titulo: 'Listo.', texto: `Las bitácoras se exigen desde la semana del ${rangoSemana(lunes)}.` });
+    } catch (e) {
+      toast({ tipo: 'error', titulo: 'No se cambió.', texto: (e as Error).message });
+    }
+  }
 
   return (
     <LayoutCoach>
@@ -55,6 +80,21 @@ export default function BitacorasCoach() {
         </div>
         <button onClick={() => ir(sumarSemanas(lunes, 1))} disabled={lunes >= actual} aria-label="Semana siguiente" className="flex h-11 w-11 rotate-180 items-center justify-center rounded-campo border border-linea-campo bg-white text-vino disabled:opacity-40"><Icon name="atras" /></button>
       </div>
+
+      {inicio && (
+        <div className={`flex flex-col gap-1.5 rounded-campo px-3.5 py-2.5 text-sm ${exigible ? 'bg-kanban text-tinta-2' : 'border border-ambar bg-white text-tinta'}`}>
+          <span>
+            {exigible
+              ? `Las bitácoras se exigen desde la semana del ${rangoSemana(inicio)}.`
+              : 'Esta semana es anterior al arranque: no se marcan atrasos.'}
+          </span>
+          {lunes !== inicio && (
+            <button onClick={() => void exigirDesdeAqui()} disabled={fijarInicio.isPending} className="self-start bg-transparent p-0 py-1 text-xs font-semibold text-vino underline">
+              Exigir bitácoras desde esta semana
+            </button>
+          )}
+        </div>
+      )}
 
       {q.isLoading ? <Cargando /> : q.isError ? (
         <EmptyState titulo="No se pudo cargar el seguimiento" texto={(q.error as Error).message} accion={<Boton onClick={() => q.refetch()}>Reintentar</Boton>} />

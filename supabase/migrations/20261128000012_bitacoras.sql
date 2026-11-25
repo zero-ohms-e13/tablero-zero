@@ -4,7 +4,7 @@
 -- entregar y un texto libre opcional ("Mi bitácora completa"). Evidencias opcionales: una tarea, una
 -- publicación de Materiales o un enlace HTTPS, siempre algo que el alumno YA puede ver.
 --
--- Privacidad: solo la ve su autor y el coach (coach y mentor, igual que el resto de la app). Tutores,
+-- Privacidad: solo la ven su autor y el coach principal (decisión: el mentor no, por ahora). Tutores,
 -- compañeros y anónimos, no.
 -- Plazo: por omisión domingo 20:00 hora de Mérida (decisión de Jaime); el coach puede cambiarlo para
 -- cualquier semana (bitacora_plazos) y volver al de omisión. Entregar después del plazo vigente queda
@@ -45,12 +45,47 @@ language sql stable security definer set search_path = public as $$
   select coalesce((select vence_at from bitacora_plazos where semana = p_semana), public.vence_bitacora_omision(p_semana))
 $$;
 
+-- Primera semana exigible: antes de ella el seguimiento no marca atrasos (arranque con datos reales).
+-- Por omisión, la semana en que se aplica esta migración; el coach la cambia.
+create table if not exists public.bitacora_config (
+  unica boolean primary key default true check (unica),
+  inicio date not null check (extract(isodow from inicio) = 1),
+  cambiado_por uuid references public.profiles(id) on delete set null,
+  cambiado_at timestamptz not null default now()
+);
+insert into public.bitacora_config (unica, inicio) values (true, public.semana_merida()) on conflict (unica) do nothing;
+alter table public.bitacora_config enable row level security;
+revoke insert, update, delete on public.bitacora_config from anon, authenticated;
+revoke all on public.bitacora_config from anon;
+drop policy if exists bitcfg_select on public.bitacora_config;
+create policy bitcfg_select on public.bitacora_config for select to authenticated using (public.es_coach() or public.es_alumno());
+
+create or replace function public.inicio_bitacoras() returns date
+language sql stable security definer set search_path = public as $$
+  select inicio from bitacora_config where unica
+$$;
+
+create or replace function public.fijar_inicio_bitacoras(p_semana date) returns date
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.es_coach_principal() then
+    raise exception 'Solo el coach cambia el arranque de las bitácoras.' using errcode = '42501';
+  end if;
+  if p_semana is null or extract(isodow from p_semana) <> 1 then
+    raise exception 'Semana no válida.' using errcode = '22023';
+  end if;
+  update bitacora_config set inicio = p_semana, cambiado_por = auth.uid(), cambiado_at = now() where unica;
+  return p_semana;
+end $$;
+revoke execute on function public.fijar_inicio_bitacoras(date), public.inicio_bitacoras() from anon, public;
+grant execute on function public.fijar_inicio_bitacoras(date), public.inicio_bitacoras() to authenticated;
+
 -- El coach cambia el plazo de una semana (p_vence = null vuelve al domingo 20:00). Avisa a los alumnos.
 create or replace function public.fijar_plazo_bitacora(p_semana date, p_vence timestamptz) returns timestamptz
 language plpgsql security definer set search_path = public as $$
 declare v timestamptz;
 begin
-  if not public.es_coach() then
+  if not public.es_coach_principal() then
     raise exception 'Solo el coach cambia la fecha de entrega.' using errcode = '42501';
   end if;
   if p_semana is null or extract(isodow from p_semana) <> 1 then
@@ -117,11 +152,11 @@ alter table public.bitacora_evidencias enable row level security;
 revoke insert, update, delete on public.bitacoras, public.bitacora_evidencias from anon, authenticated;
 revoke all on public.bitacoras, public.bitacora_evidencias from anon;
 
--- Ver: el autor (alumno activo) siempre; el coach/mentor solo lo ENTREGADO (un borrador es privado del
+-- Ver: el autor (alumno activo) siempre; el coach principal solo lo ENTREGADO (un borrador es privado del
 -- alumno hasta que lo entrega; el seguimiento solo dice que está pendiente). Nadie más.
 create or replace function public.puede_ver_bitacora(p_alumno uuid, p_estado text) returns boolean
 language sql stable security definer set search_path = public as $$
-  select (public.es_coach() and p_estado <> 'borrador') or (p_alumno = auth.uid() and public.es_alumno())
+  select (public.es_coach_principal() and p_estado <> 'borrador') or (p_alumno = auth.uid() and public.es_alumno())
 $$;
 
 drop policy if exists bit_select on public.bitacoras;
@@ -147,11 +182,16 @@ begin
   if v_yo is null or not public.es_alumno() then
     raise exception 'Solo los alumnos escriben bitácora.' using errcode = '42501';
   end if;
-  if p_semana is null or extract(isodow from p_semana) <> 1 or p_semana > v_actual or p_semana < v_actual - 28 then
+  if p_semana is null or extract(isodow from p_semana) <> 1 or p_semana > v_actual then
     raise exception 'Esa semana no está abierta para escribir.' using errcode = '22023';
   end if;
 
   select * into v_b from bitacoras where alumno_id = v_yo and semana = p_semana for update;
+  -- Ventana: semana actual y hasta 4 anteriores; una bitácora DEVUELTA por el coach se puede corregir
+  -- aunque sea más antigua (si no, la devolución no tendría salida). La app aplica la misma regla.
+  if p_semana < v_actual - 28 and not (found and v_b.estado = 'devuelta') then
+    raise exception 'Esa semana no está abierta para escribir.' using errcode = '22023';
+  end if;
   if found then
     if v_b.estado in ('entregada', 'revisada') then
       raise exception 'conflicto: esta bitácora ya se entregó.' using errcode = 'PT409';
@@ -233,7 +273,7 @@ end $$;
 create or replace function public.revisar_bitacora(p_id uuid, p_retro text) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  if not public.es_coach() then
+  if not public.es_coach_principal() then
     raise exception 'Solo el coach revisa bitácoras.' using errcode = '42501';
   end if;
   update bitacoras set estado = 'revisada', retro = nullif(btrim(coalesce(p_retro, '')), ''), retro_por = auth.uid(),
@@ -248,7 +288,7 @@ create or replace function public.devolver_bitacora(p_id uuid, p_nota text) retu
 language plpgsql security definer set search_path = public as $$
 declare v_alumno uuid; v_semana date;
 begin
-  if not public.es_coach() then
+  if not public.es_coach_principal() then
     raise exception 'Solo el coach devuelve bitácoras.' using errcode = '42501';
   end if;
   if btrim(coalesce(p_nota, '')) = '' then
@@ -269,18 +309,20 @@ end $$;
 -- estado 'pendiente' = sin bitácora o solo borrador; atrasada = pendiente o devuelta después del plazo.
 create or replace function public.resumen_bitacoras(p_semana date)
 returns table (alumno_id uuid, nombre_visible text, iniciales text, color text, bitacora_id uuid, estado text,
-               tarde boolean, atrasada boolean, entregada_at timestamptz, necesita_ayuda boolean)
+               tarde boolean, atrasada boolean, entregada_at timestamptz, necesita_ayuda boolean, exigible boolean)
 language plpgsql stable security definer set search_path = public as $$
 begin
-  if not public.es_coach() then
+  if not public.es_coach_principal() then
     raise exception 'Solo el coach ve el seguimiento.' using errcode = '42501';
   end if;
   return query
   select p.id, p.nombre_visible, p.iniciales, p.color, b.id,
          case when b.id is null or b.estado = 'borrador' then 'pendiente' else b.estado end,
          coalesce(b.primera_entrega_at > public.vence_bitacora(p_semana), false),
-         (b.id is null or b.estado in ('borrador', 'devuelta')) and now() > public.vence_bitacora(p_semana),
-         b.entregada_at, coalesce(b.necesita_ayuda and b.estado <> 'borrador', false)
+         -- Atrasada solo en semanas exigibles (desde el arranque que fijó el coach)
+         p_semana >= public.inicio_bitacoras() and (b.id is null or b.estado in ('borrador', 'devuelta')) and now() > public.vence_bitacora(p_semana),
+         b.entregada_at, coalesce(b.necesita_ayuda and b.estado <> 'borrador', false),
+         p_semana >= public.inicio_bitacoras()
   from profiles p
   left join bitacoras b on b.alumno_id = p.id and b.semana = p_semana
   where p.rol_global = 'alumno' and p.activo
