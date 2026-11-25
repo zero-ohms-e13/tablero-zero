@@ -25,11 +25,8 @@ Deno.serve(async (req) => {
 
   const deps: Deps = {
     reservar: (u, ip) => rpc('reservar_intento', { p_usuario: u, p_ip: ip }),
-    liberar: async (u, ip) => {
-      await rpc('liberar_intento', { p_usuario: u, p_ip: ip });
-    },
-    accesoCorrecto: async (u, ip) => {
-      await rpc('acceso_correcto', { p_usuario: u, p_ip: ip });
+    liquidar: async (reserva, resultado) => {
+      await rpc('liquidar_intento', { p_reserva: reserva, p_resultado: resultado });
     },
     autenticar: async (u, password) => {
       const { data, error } = await clienteAnonimo().auth.signInWithPassword({ email: correoDe(u), password });

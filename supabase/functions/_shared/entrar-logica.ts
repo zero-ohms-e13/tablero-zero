@@ -10,14 +10,14 @@ export type ResultadoAuth =
 
 export type Perfil = { activo: boolean; debe_cambiar_password: boolean; password_temporal_vence: string | null } | null;
 
-export type Reserva = { permitido: boolean; hasta: string | null };
+export type Reserva = { permitido: boolean; hasta: string | null; reserva: string | null };
+export type Liquidacion = 'fallo' | 'correcto' | 'infra';
 
 export type Deps = {
   /** Admisión atómica antes de Auth: reserva el intento o lo rechaza si hay bloqueo vigente. */
   reservar(usuario: string, ip: string): Promise<Reserva>;
-  /** Devuelve la reserva (error de infraestructura: no cuenta como contraseña incorrecta). */
-  liberar(usuario: string, ip: string): Promise<void>;
-  accesoCorrecto(usuario: string, ip: string): Promise<void>;
+  /** Liquida la reserva una sola vez (idempotente en la base). 'infra' la devuelve: no cuenta como fallo. */
+  liquidar(reserva: string, resultado: Liquidacion): Promise<void>;
   autenticar(usuario: string, password: string): Promise<ResultadoAuth>;
   perfil(userId: string): Promise<Perfil>;
   cerrarSesion(accessToken: string): Promise<void>;
@@ -53,17 +53,19 @@ export async function procesarEntrada(entrada: { usuario?: unknown; password?: u
 
   // 2) Autenticación
   const auth = await deps.autenticar(usuario, password).catch((): ResultadoAuth => ({ tipo: 'infra' }));
+  const liquidar = (r: Liquidacion) => (reserva.reserva ? deps.liquidar(reserva.reserva, r).catch(() => {}) : Promise.resolve());
   if (auth.tipo === 'infra') {
-    await deps.liberar(usuario, ip).catch(() => {});
+    await liquidar('infra');
     return { status: 503, body: { codigo: 'servicio' } };
   }
   if (auth.tipo === 'credenciales') {
     // El intento ya quedó contado en la reserva; si llegó al límite, el bloqueo queda confirmado
+    await liquidar('fallo');
     return reserva.hasta ? { status: 423, body: { codigo: 'bloqueada', hasta: reserva.hasta } } : { status: 401, body: { codigo: 'incorrecta' } };
   }
 
   // La contraseña fue correcta: el contador de este origen se limpia aunque la cuenta no pueda entrar
-  await deps.accesoCorrecto(usuario, ip).catch(() => {});
+  await liquidar('correcto');
 
   // 3) Reglas de cuenta: inactiva y contraseña temporal vencida (se cierra la sesión recién creada)
   const p = await deps.perfil(auth.userId).catch(() => undefined);

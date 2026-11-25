@@ -3,16 +3,19 @@
 -- Antes: un contador por nombre de usuario (leer → escribir por separado) bloqueaba al usuario
 -- ANTES de autenticar, así que cualquiera podía dejar fuera a un alumno escribiendo mal su contraseña.
 --
--- Ahora: ADMISIÓN atómica antes de llamar a Auth (revisión de ChatGPT, punto de control 0): cada intento
--- reserva un lugar en tres contadores con ventana de 15 min; si alguno ya está en su límite, el intento
--- se rechaza sin llegar a Auth. Así una ráfaga concurrente no puede rebasar el límite.
---   'ui:<usuario>|<ip>'   5 intentos → 10 min (mismo usuario desde el mismo origen)
---   'ip:<ip>'            60 intentos → 10 min (un origen probando muchas cuentas; 60 por la red escolar
---                                              compartida — valor a calibrar, decisión abierta para Jaime)
---   'u:<usuario>'        30 intentos → 10 min (tope contra ataque distribuido desde muchos orígenes)
--- Sin IP verificada ('sin-ip') NO se usa el contador por origen: no hay un cupo único compartido.
--- Entrada correcta: borra 'ui' y devuelve la reserva a 'ip' y 'u'. Error de infraestructura: devuelve
--- la reserva en los tres (no cuenta como contraseña incorrecta).
+-- Ahora (con las revisiones de ChatGPT en los puntos de control 0 y 1):
+--  * Admisión atómica antes de Auth: cada intento crea una RESERVA con identidad y vencimiento;
+--    se liquida una sola vez (idempotente) como 'fallo', 'correcto' o 'infra'.
+--  * Solo NIEGA el contador del par usuario+origen verificado:
+--      'ui:<usuario>|<ip>'  5 intentos / 15 min → 10 min.
+--  * Los contadores por origen y por usuario son SEÑALES DE ALERTA (no niegan acceso):
+--      'ip:<ip>'    60 intentos / 15 min → alerta (umbral provisional a medir en la red escolar)
+--      'u:<usuario>' 30 intentos / 15 min → alerta (posible ataque distribuido)
+--    Así las credenciales válidas desde otro origen siempre pueden entrar.
+--  * Sin IP verificada ('sin-ip') no hay contador que niegue ni cupo común compartido;
+--    solo cuenta la alerta por usuario. Riesgo abierto hasta verificar cómo el gateway fija la IP.
+--  * Error de infraestructura devuelve la reserva; una liquidación tardía después de que la ventana
+--    se reinició no descuenta de la ventana nueva.
 --
 -- Solo la Edge Function (service_role) usa estas funciones.
 -- Recuperación: la tabla intentos_login anterior se conserva sin uso; volver a la versión previa de
@@ -22,122 +25,157 @@ create table if not exists public.intentos_acceso (
   clave text primary key,
   fallidos int not null default 0,
   ventana_inicio timestamptz not null default now(),
-  bloqueado_hasta timestamptz
+  bloqueado_hasta timestamptz, -- solo claves 'ui:'
+  alerta_desde timestamptz     -- claves 'ip:' y 'u:' que superaron su umbral en la ventana
 );
 alter table public.intentos_acceso enable row level security; -- sin políticas: solo service_role
 revoke all on public.intentos_acceso from anon, authenticated;
 
--- Límites (una sola fuente de verdad)
+create table if not exists public.intentos_reservas (
+  id uuid primary key default gen_random_uuid(),
+  claves text[] not null,
+  ventanas timestamptz[] not null, -- ventana_inicio de cada clave al reservar
+  creada timestamptz not null default now()
+);
+alter table public.intentos_reservas enable row level security;
+revoke all on public.intentos_reservas from anon, authenticated;
+
+-- Umbrales (una sola fuente de verdad)
 create or replace function public.limite_acceso(p_clave text) returns int
 language sql immutable set search_path = '' as $$
   select case when p_clave like 'ui:%' then 5 when p_clave like 'ip:%' then 60 else 30 end
 $$;
 
--- Claves que aplican a un intento (ordenadas: se bloquean siempre en el mismo orden)
+-- Claves de un intento, ordenadas (los candados se toman siempre en el mismo orden)
 create or replace function public.claves_acceso(p_usuario text, p_ip text) returns text[]
 language sql immutable set search_path = '' as $$
   select array(select k from unnest(array[
-    'ui:' || p_usuario || '|' || p_ip,
+    case when p_ip <> 'sin-ip' then 'ui:' || p_usuario || '|' || p_ip end,
     case when p_ip <> 'sin-ip' then 'ip:' || p_ip end,
     'u:' || p_usuario]) k where k is not null order by k)
 $$;
 
--- ¿Está bloqueado este intento? Devuelve hasta cuándo (o null). Solo lectura (panel / diagnóstico).
+create or replace function public.bloquear_claves(p_claves text[]) returns void
+language plpgsql set search_path = '' as $$
+declare k text;
+begin
+  foreach k in array p_claves loop
+    perform pg_advisory_xact_lock(hashtextextended(k, 0));
+  end loop;
+end $$;
+
+-- ¿Está bloqueado este intento? (solo el par usuario+origen puede bloquear)
 create or replace function public.acceso_bloqueado(p_usuario text, p_ip text) returns timestamptz
 language sql stable security definer set search_path = '' as $$
   select max(bloqueado_hasta) from public.intentos_acceso
-  where clave = any(public.claves_acceso(p_usuario, p_ip)) and bloqueado_hasta > now()
+  where clave = any(public.claves_acceso(p_usuario, p_ip)) and clave like 'ui:%' and bloqueado_hasta > now()
 $$;
 
--- Admisión atómica: si algún contador está bloqueado, rechaza sin contar; si no, reserva el intento
--- en todos. Devuelve {permitido, hasta}: hasta = bloqueo vigente (si se rechazó) o el que este intento
--- activaría si resulta fallido (llegó al límite).
+-- Admisión atómica. Devuelve {permitido, hasta, reserva}:
+--   permitido=false → bloqueo vigente del par (no se cuenta ni se llama a Auth);
+--   hasta → bloqueo que quedaría si este intento resulta fallido (llegó al límite).
 create or replace function public.reservar_intento(p_usuario text, p_ip text) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
   ks text[] := public.claves_acceso(p_usuario, p_ip);
-  k text;
   vigente timestamptz;
   llega timestamptz;
+  vs timestamptz[];
+  rid uuid;
+  k text;
 begin
-  foreach k in array ks loop
-    perform pg_advisory_xact_lock(hashtextextended(k, 0));
-  end loop;
-  -- Ventanas vencidas se reinician
-  update public.intentos_acceso set fallidos = 0, ventana_inicio = now(), bloqueado_hasta = null
+  perform public.bloquear_claves(ks);
+  -- Ventanas vencidas se reinician (un bloqueo vigente se respeta hasta que vence)
+  update public.intentos_acceso set fallidos = 0, ventana_inicio = now(), bloqueado_hasta = null, alerta_desde = null
   where clave = any(ks) and ventana_inicio < now() - interval '15 minutes'
     and (bloqueado_hasta is null or bloqueado_hasta <= now());
   select max(bloqueado_hasta) into vigente from public.intentos_acceso
-  where clave = any(ks) and bloqueado_hasta > now();
+  where clave = any(ks) and clave like 'ui:%' and bloqueado_hasta > now();
   if vigente is not null then
-    return jsonb_build_object('permitido', false, 'hasta', vigente);
+    return jsonb_build_object('permitido', false, 'hasta', vigente, 'reserva', null);
   end if;
   foreach k in array ks loop
     insert into public.intentos_acceso as i (clave, fallidos, ventana_inicio) values (k, 1, now())
     on conflict (clave) do update set fallidos = i.fallidos + 1;
   end loop;
-  -- Si este intento alcanza un límite, queda bloqueado de forma tentativa: lo confirma un fallo
-  -- y lo retira una entrada correcta o un error de infraestructura.
   update public.intentos_acceso set bloqueado_hasta = now() + interval '10 minutes'
-  where clave = any(ks) and fallidos >= public.limite_acceso(clave);
+  where clave = any(ks) and clave like 'ui:%' and fallidos >= public.limite_acceso(clave);
+  update public.intentos_acceso set alerta_desde = coalesce(alerta_desde, now())
+  where clave = any(ks) and clave not like 'ui:%' and fallidos >= public.limite_acceso(clave);
   select max(bloqueado_hasta) into llega from public.intentos_acceso
-  where clave = any(ks) and bloqueado_hasta > now();
-  return jsonb_build_object('permitido', true, 'hasta', llega);
+  where clave = any(ks) and clave like 'ui:%' and bloqueado_hasta > now();
+  select array_agg(ventana_inicio order by clave) into vs from public.intentos_acceso where clave = any(ks);
+  insert into public.intentos_reservas (claves, ventanas) values (ks, vs) returning id into rid;
+  return jsonb_build_object('permitido', true, 'hasta', llega, 'reserva', rid);
 end $$;
 
--- Devuelve la reserva (error de infraestructura o entrada correcta en 'ip'/'u').
-create or replace function public.liberar_intento(p_usuario text, p_ip text, p_solo_globales boolean default false)
-returns void language plpgsql security definer set search_path = '' as $$
-declare
-  ks text[] := public.claves_acceso(p_usuario, p_ip);
-  k text;
-begin
-  foreach k in array ks loop
-    perform pg_advisory_xact_lock(hashtextextended(k, 0));
-  end loop;
-  update public.intentos_acceso set
-    fallidos = greatest(fallidos - 1, 0),
-    bloqueado_hasta = case when greatest(fallidos - 1, 0) < public.limite_acceso(clave) then null else bloqueado_hasta end
-  where clave = any(ks) and (not p_solo_globales or clave not like 'ui:%');
-end $$;
-
--- Entrada correcta: limpia el contador de ese usuario desde ese origen y devuelve la reserva global.
-create or replace function public.acceso_correcto(p_usuario text, p_ip text) returns void
+-- Liquidación idempotente de una reserva:
+--   'fallo'    → el intento queda contado (y el bloqueo tentativo, confirmado);
+--   'correcto' → se borra el par usuario+origen y se devuelve la reserva en origen/usuario;
+--   'infra'    → se devuelve la reserva en todas las claves.
+-- Solo descuenta de la MISMA ventana en la que se reservó. Una segunda llamada no hace nada.
+create or replace function public.liquidar_intento(p_reserva uuid, p_resultado text) returns boolean
 language plpgsql security definer set search_path = '' as $$
+declare
+  r public.intentos_reservas;
+  i int;
 begin
-  perform public.liberar_intento(p_usuario, p_ip, true);
-  delete from public.intentos_acceso where clave = 'ui:' || p_usuario || '|' || p_ip;
+  if p_resultado not in ('fallo', 'correcto', 'infra') then raise exception 'resultado inválido'; end if;
+  delete from public.intentos_reservas where id = p_reserva returning * into r;
+  if r.id is null then return false; end if; -- ya liquidada o vencida
+  if p_resultado = 'fallo' then return true; end if;
+  perform public.bloquear_claves(r.claves);
+  for i in 1 .. array_length(r.claves, 1) loop
+    if p_resultado = 'correcto' and r.claves[i] like 'ui:%' then
+      delete from public.intentos_acceso where clave = r.claves[i] and ventana_inicio = r.ventanas[i];
+    else
+      update public.intentos_acceso set
+        fallidos = greatest(fallidos - 1, 0),
+        bloqueado_hasta = case when greatest(fallidos - 1, 0) < public.limite_acceso(clave) then null else bloqueado_hasta end,
+        alerta_desde = case when greatest(fallidos - 1, 0) < public.limite_acceso(clave) then null else alerta_desde end
+      where clave = r.claves[i] and ventana_inicio = r.ventanas[i];
+    end if;
+  end loop;
+  return true;
 end $$;
 
--- Recuperación (reinicio de contraseña por el coach): quita los bloqueos de ese usuario en todos los orígenes.
+-- Recuperación (reinicio de contraseña por el coach): quita los bloqueos y alertas de ese usuario.
 create or replace function public.desbloquear_usuario(p_usuario text) returns void
 language sql security definer set search_path = '' as $$
   delete from public.intentos_acceso where clave = 'u:' || p_usuario or clave like 'ui:' || p_usuario || '|%';
   delete from public.intentos_login where usuario = p_usuario;
 $$;
 
--- Usuarios con bloqueo activo (panel del coach).
+-- Usuarios con bloqueo activo de algún par usuario+origen (panel del coach).
 create or replace function public.usuarios_bloqueados() returns table (usuario text, bloqueado_hasta timestamptz)
 language sql stable security definer set search_path = '' as $$
-  select split_part(regexp_replace(clave, '^(ui|u):', ''), '|', 1), max(bloqueado_hasta)
+  select split_part(substr(clave, 4), '|', 1), max(bloqueado_hasta)
   from public.intentos_acceso
-  where (clave like 'ui:%' or clave like 'u:%') and bloqueado_hasta > now()
+  where clave like 'ui:%' and bloqueado_hasta > now()
   group by 1
 $$;
 
--- Limpieza de filas viejas (las llama la Edge Function de vez en cuando; también sirve a mano).
+-- Señales de alerta vigentes (origen o usuario por encima de su umbral en la ventana actual).
+create or replace function public.alertas_acceso() returns table (clave text, intentos int, desde timestamptz)
+language sql stable security definer set search_path = '' as $$
+  select clave, fallidos, alerta_desde from public.intentos_acceso
+  where alerta_desde is not null and ventana_inicio >= now() - interval '15 minutes'
+$$;
+
+-- Limpieza: contadores viejos y reservas vencidas (una reserva sin liquidar queda contada como fallo).
 create or replace function public.purgar_intentos() returns void
 language sql security definer set search_path = '' as $$
   delete from public.intentos_acceso
   where ventana_inicio < now() - interval '1 day' and (bloqueado_hasta is null or bloqueado_hasta < now());
+  delete from public.intentos_reservas where creada < now() - interval '2 minutes';
 $$;
 
 do $$
 declare f text;
 begin
-  foreach f in array array['acceso_bloqueado(text,text)', 'reservar_intento(text,text)', 'liberar_intento(text,text,boolean)',
-                           'acceso_correcto(text,text)', 'desbloquear_usuario(text)', 'usuarios_bloqueados()',
-                           'purgar_intentos()', 'limite_acceso(text)', 'claves_acceso(text,text)'] loop
+  foreach f in array array['acceso_bloqueado(text,text)', 'reservar_intento(text,text)', 'liquidar_intento(uuid,text)',
+                           'desbloquear_usuario(text)', 'usuarios_bloqueados()', 'alertas_acceso()',
+                           'purgar_intentos()', 'limite_acceso(text)', 'claves_acceso(text,text)', 'bloquear_claves(text[])'] loop
     execute format('revoke execute on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to service_role', f);
   end loop;
