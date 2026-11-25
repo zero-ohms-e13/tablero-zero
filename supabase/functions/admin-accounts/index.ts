@@ -45,9 +45,9 @@ function depsAlta(srv: SupabaseClient): Deps {
     marcar: async (sol, estado, err) => {
       await rpc('marcar_alta', { p_solicitud: sol, p_estado: estado, p_error: err });
     },
-    crearIdentidad: async (usuario, password) => {
+    crearIdentidad: async (usuario, password, solicitud) => {
       const { data, error } = await srv.auth.admin.createUser({
-        email: correoDe(usuario), password, email_confirm: true, user_metadata: {}, ban_duration: BLOQUEO,
+        email: correoDe(usuario), password, email_confirm: true, user_metadata: {}, app_metadata: { alta: solicitud }, ban_duration: BLOQUEO,
       });
       if (!error && data.user) return { ok: true, id: data.user.id };
       const e = error as { status?: number; code?: string } | null;
@@ -60,15 +60,28 @@ function depsAlta(srv: SupabaseClient): Deps {
     completar: async (p) => {
       await rpc('completar_alta', { p });
     },
+    identidadDeSolicitud: async (usuario, solicitud) => {
+      // Busca la identidad por correo entre las páginas del listado de Auth (equipos pequeños: pocas páginas)
+      for (let page = 1; page <= 20; page++) {
+        const { data, error } = await srv.auth.admin.listUsers({ page, perPage: 200 });
+        if (error) throw error;
+        const u = data.users.find((x) => x.email === correoDe(usuario));
+        if (u) return u.app_metadata?.alta === solicitud ? u.id : null;
+        if (data.users.length < 200) return null;
+      }
+      return null;
+    },
     activar: async (id) => {
       const { error } = await srv.auth.admin.updateUserById(id, { ban_duration: 'none' });
       if (error) throw error;
     },
-    nuevaPassword: async (id, password, v) => {
+    bloquear: async (id) => {
+      const { error } = await srv.auth.admin.updateUserById(id, { ban_duration: BLOQUEO });
+      if (error) throw error;
+    },
+    fijarPassword: async (id, password) => {
       const { error } = await srv.auth.admin.updateUserById(id, { password });
       if (error) throw error;
-      const { error: e2 } = await srv.from('profiles').update({ debe_cambiar_password: true, password_temporal_vence: v }).eq('id', id);
-      if (e2) throw e2;
     },
     password: passwordTemporal,
     ahora: () => new Date(),

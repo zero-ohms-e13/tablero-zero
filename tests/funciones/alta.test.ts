@@ -9,14 +9,14 @@ const COACH = { id: 'c0000000-0000-4000-8000-000000000000', rol_global: 'coach' 
 const AUX = { id: 'c1000000-0000-4000-8000-000000000000', rol_global: 'coach_aux' };
 const SOL = '44444444-4444-4444-8444-444444444444';
 
-type Fallo = 'identidad' | 'identidad_tutor' | 'registrar' | 'completar' | 'borrar' | 'activar' | 'iniciar' | 'existe_una_vez';
+type Fallo = 'identidad' | 'identidad_tutor' | 'registrar' | 'completar' | 'borrar' | 'activar' | 'activar_tutor' | 'iniciar' | 'existe_una_vez' | 'perder_respuesta_tutor';
 
 /** Backend falso: identidades, perfiles, membresías, vínculos y solicitudes en memoria. */
 function backend(fallos: Fallo[] = []) {
   let n = 0;
   const f = new Set(fallos);
   const db = {
-    identidades: new Map<string, { usuario: string; bloqueada: boolean; password: string }>([['pre-existente', { usuario: 'ana.l', bloqueada: false, password: 'x' }]]),
+    identidades: new Map<string, { usuario: string; bloqueada: boolean; password: string; alta?: string }>([['pre-existente', { usuario: 'ana.l', bloqueada: false, password: 'x' }]]),
     perfiles: new Map<string, { usuario: string; rol: string }>([['pre-existente', { usuario: 'ana.l', rol: 'alumno' }], [ALUMNO, { usuario: 'leo.v', rol: 'alumno' }]]),
     membresias: [] as { usuario_id: string; area_id: string }[],
     vinculos: [] as { tutor_id: string; alumno_id: string }[],
@@ -26,7 +26,8 @@ function backend(fallos: Fallo[] = []) {
   const deps: Deps = {
     areasExistentes: async (ids) => ids.filter((i) => i === AREA || i === AREA2),
     esAlumno: async (id) => db.perfiles.get(id)?.rol === 'alumno',
-    usuariosOcupados: async (base) => [...db.identidades.values()].map((i) => i.usuario).filter((u) => u.startsWith(base)),
+    // Como la función real: consulta perfiles (una identidad sin perfil no aparece aquí)
+    usuariosOcupados: async (base) => [...db.perfiles.values()].map((i) => i.usuario).filter((u) => u.startsWith(base)),
     iniciar: async (sol, coach, huella) => {
       if (f.has('iniciar')) throw new Error('bd');
       const a = db.altas.get(sol);
@@ -51,7 +52,7 @@ function backend(fallos: Fallo[] = []) {
     marcar: async (sol, estado) => {
       db.altas.get(sol)!.estado = estado;
     },
-    crearIdentidad: async (usuario, password) => {
+    crearIdentidad: async (usuario, password, alta) => {
       if (f.has('existe_una_vez')) {
         f.delete('existe_una_vez');
         db.identidades.set(`otra-alta-${usuario}`, { usuario, bloqueada: false, password: 'y' }); // alta concurrente ganó
@@ -60,8 +61,22 @@ function backend(fallos: Fallo[] = []) {
       if (f.has('identidad') || (f.has('identidad_tutor') && usuario.startsWith('tutor.'))) return { ok: false, existe: false };
       if ([...db.identidades.values()].some((i) => i.usuario === usuario)) return { ok: false, existe: true };
       const id = `id-${++n}`;
-      db.identidades.set(id, { usuario, bloqueada: true, password });
+      db.identidades.set(id, { usuario, bloqueada: true, password, alta });
+      if (f.has('perder_respuesta_tutor') && usuario.startsWith('tutor.')) {
+        f.delete('perder_respuesta_tutor');
+        return { ok: false, existe: false }; // Auth la creó, pero la respuesta no llegó
+      }
       return { ok: true, id };
+    },
+    identidadDeSolicitud: async (usuario, alta) => {
+      const e = [...db.identidades.entries()].find(([, i]) => i.usuario === usuario);
+      return e && e[1].alta === alta ? e[0] : null;
+    },
+    bloquear: async (id) => {
+      db.identidades.get(id)!.bloqueada = true;
+    },
+    fijarPassword: async (id, password) => {
+      db.identidades.get(id)!.password = password;
     },
     borrarIdentidad: async (id) => {
       if (f.has('borrar')) return false;
@@ -79,11 +94,8 @@ function backend(fallos: Fallo[] = []) {
       a.resultado = p.resultado;
     },
     activar: async (id) => {
-      if (f.has('activar')) throw new Error('auth');
+      if (f.has('activar') || (f.has('activar_tutor') && db.identidades.get(id)!.usuario.startsWith('tutor.'))) throw new Error('auth');
       db.identidades.get(id)!.bloqueada = false;
-    },
-    nuevaPassword: async (id, password) => {
-      db.identidades.get(id)!.password = password;
     },
     password: () => `cobre-${100 + n}`,
     ahora: () => new Date('2026-11-25T18:00:00Z'),
@@ -177,17 +189,44 @@ describe('FUN-003 · alta de cuentas', () => {
     expect(vivos.every(([, i]) => !i.bloqueada)).toBe(true);
   });
 
-  it('reintento tras perder la respuesta: no duplica perfiles ni vínculos; mismas cuentas con contraseña nueva', async () => {
+  it('reintento tras perder la respuesta: no duplica nada ni cambia contraseñas; informa las cuentas ya creadas', async () => {
     const { db, deps } = backend();
     const r1 = await procesarAlta(alumnoConTutor, COACH, deps);
+    const antes = [...db.identidades.values()].map((i) => i.password);
     const r2 = await procesarAlta(alumnoConTutor, COACH, deps);
     expect(r2.status).toBe(200);
-    expect(r2.body.recuperada).toBe(true);
-    const ids = (r: typeof r1) => (r.body.fichas as { usuario_id: string }[]).map((x) => x.usuario_id);
-    expect(ids(r2)).toEqual(ids(r1));
+    expect(r2.body.fichas).toEqual([]);
+    expect((r2.body.ya_creadas as { usuario_id: string }[]).map((x) => x.usuario_id)).toEqual((r1.body.fichas as { usuario_id: string }[]).map((x) => x.usuario_id));
+    expect(JSON.stringify(r2.body)).not.toMatch(/password/);
+    expect([...db.identidades.values()].map((i) => i.password)).toEqual(antes); // una ficha entregada sigue valiendo
     expect(db.identidades.size).toBe(3);
     expect(db.vinculos).toHaveLength(1);
     expect(db.membresias).toHaveLength(1);
+  });
+
+  it('Auth crea la identidad pero se pierde la respuesta: el reintento la reconoce como propia y no queda huérfana', async () => {
+    const b = backend(['perder_respuesta_tutor']);
+    const r1 = await procesarAlta(alumnoConTutor, COACH, b.deps);
+    expect(r1.status).toBe(500);
+    // quedó una identidad del tutor sin registrar, BLOQUEADA y sin perfil
+    const huerfana = [...b.db.identidades.entries()].find(([, i]) => i.usuario === 'tutor.mia.s')!;
+    expect(huerfana[1].bloqueada).toBe(true);
+    expect(b.db.perfiles.has(huerfana[0])).toBe(false);
+    const r2 = await procesarAlta(alumnoConTutor, COACH, b.deps);
+    expect(r2.status).toBe(200);
+    const vivos = [...b.db.identidades.entries()].filter(([id]) => id !== 'pre-existente');
+    expect(vivos.map(([, i]) => i.usuario).sort()).toEqual(['mia.s', 'tutor.mia.s']); // adoptada, sin tutor.mia.s2
+    expect(vivos.every(([id, i]) => !i.bloqueada && b.db.perfiles.has(id))).toBe(true);
+    const fichaTutor = (r2.body.fichas as { usuario: string; password: string }[]).find((x) => x.usuario === 'tutor.mia.s')!;
+    expect(b.db.identidades.get(huerfana[0])!.password).toBe(fichaTutor.password); // la ficha entregada funciona
+  });
+
+  it('una identidad de OTRA solicitud con ese usuario nunca se adopta', async () => {
+    const b = backend();
+    b.db.identidades.set('ajena', { usuario: 'mia.s', bloqueada: true, password: 'z', alta: 'otra-solicitud' });
+    const r = await procesarAlta({ nombre: 'Mia Soto', rol: 'alumno', membresias: [{ area_id: AREA }] }, COACH, b.deps);
+    expect((r.body.fichas as { usuario: string }[])[0].usuario).toBe('mia.s2');
+    expect(b.db.identidades.get('ajena')!.password).toBe('z');
   });
 
   it('la misma solicitud con otros datos o en curso no se procesa dos veces', async () => {
@@ -220,7 +259,7 @@ describe('FUN-003 · alta de cuentas', () => {
     expect(db.borrados).toEqual(['id-1']);
   });
 
-  it('fallo al activar: no se entregan fichas; el reintento activa y entrega', async () => {
+  it('fallo al activar: no se entregan fichas; el reintento activa sin cambiar contraseñas', async () => {
     const b = backend(['activar']);
     const r = await procesarAlta(alumnoConTutor, COACH, b.deps);
     expect(r).toMatchObject({ status: 500, body: { estado: 'completa' } });
@@ -229,8 +268,17 @@ describe('FUN-003 · alta de cuentas', () => {
     b.f.clear();
     const r2 = await procesarAlta(alumnoConTutor, COACH, b.deps);
     expect(r2.status).toBe(200);
+    expect(r2.body.ya_creadas).toHaveLength(2);
     expect(b.db.identidades.get('id-1')!.bloqueada).toBe(false);
     expect(b.db.identidades.size).toBe(3);
+  });
+
+  it('activación parcial (falla la del tutor): el alumno vuelve a quedar bloqueado', async () => {
+    const b = backend(['activar_tutor']);
+    const r = await procesarAlta(alumnoConTutor, COACH, b.deps);
+    expect(r.status).toBe(500);
+    expect(b.db.identidades.get('id-1')!.bloqueada).toBe(true); // alumno
+    expect(b.db.identidades.get('id-2')!.bloqueada).toBe(true); // tutor
   });
 
   it('error al iniciar: no se crea nada', async () => {

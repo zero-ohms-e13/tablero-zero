@@ -172,7 +172,7 @@ export default function Cuentas() {
           alumnos={alumnos}
           puedeMentor={esCoachPrincipal}
           onCreada={(f) => {
-            setFichas(f);
+            setFichas(f.length ? f : null);
             recargar();
           }}
         />
@@ -212,7 +212,7 @@ function NuevaCuenta({ areas, alumnos, puedeMentor, onCreada }: {
     setError(null);
     setEnviando(true);
     try {
-      const r = await admin({
+      const r = await admin<{ fichas: Ficha[]; ya_creadas?: { usuario: string }[]; mensaje?: string }>({
         accion: 'crear',
         solicitud_id: solicitud,
         nombre: nombre.trim(),
@@ -224,6 +224,13 @@ function NuevaCuenta({ areas, alumnos, puedeMentor, onCreada }: {
         alumno_id: rol === 'tutor' ? alumnoId : undefined,
         color: esAlumno ? undefined : '#5A4335',
       });
+      if (r.ya_creadas?.length) {
+        // FUN-003: reintento de un alta que ya había terminado; no se cambian contraseñas
+        onCreada([]);
+        setError(`${r.mensaje ?? 'Estas cuentas ya se habían creado.'} (${r.ya_creadas.map((x) => x.usuario).join(', ')})`);
+        setSolicitud(crypto.randomUUID());
+        return;
+      }
       onCreada(r.fichas);
       setNombre('');
       setUsuario('');
@@ -365,7 +372,11 @@ function Acciones({ perfil, onCerrar, alumnos, tutores, vinculos, puedeBorrar, o
             <Boton variante="fantasma" onClick={() => setVista('vincular')}><Icon name="enlace" size={18} /> {esAlumno ? 'Vincular tutor' : 'Vincular a otro alumno'}</Boton>
           )}
           {esAlumno && (
-            <Boton variante="fantasma" onClick={() => correr(async () => onFichas((await admin({ accion: 'crear', solicitud_id: solTutor, rol: 'tutor', nombre: `Familia de ${perfil.nombre_visible.split(' ')[0]}`, usuario: `tutor.${perfil.usuario}`, alumno_id: perfil.id })).fichas), 'Cuenta de tutor creada.')}>
+            <Boton variante="fantasma" onClick={() => correr(async () => {
+              const r = await admin<{ fichas: Ficha[]; mensaje?: string }>({ accion: 'crear', solicitud_id: solTutor, rol: 'tutor', nombre: `Familia de ${perfil.nombre_visible.split(' ')[0]}`, usuario: `tutor.${perfil.usuario}`, alumno_id: perfil.id });
+              if (!r.fichas.length) throw new Error(r.mensaje ?? 'Esa cuenta ya se había creado.');
+              onFichas(r.fichas);
+            }, 'Cuenta de tutor creada.')}>
               <Icon name="mas" size={18} /> Crear cuenta de tutor nueva
             </Boton>
           )}

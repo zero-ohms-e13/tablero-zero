@@ -37,13 +37,18 @@ export type Deps = {
   registrarCreado(solicitud: string, id: string): Promise<void>;
   olvidarCreados(solicitud: string, ids: string[]): Promise<void>;
   marcar(solicitud: string, estado: 'incompleta', error: string): Promise<void>;
-  /** Crea la identidad BLOQUEADA. existe=true si el usuario (correo) ya estaba tomado. */
-  crearIdentidad(usuario: string, password: string): Promise<{ ok: true; id: string } | { ok: false; existe: boolean }>;
+  /** Crea la identidad BLOQUEADA y marcada con la solicitud (app_metadata). existe=true si el usuario ya estaba tomado. */
+  crearIdentidad(usuario: string, password: string, solicitud: string): Promise<{ ok: true; id: string } | { ok: false; existe: boolean }>;
+  /** Si el usuario tomado es una identidad de ESTA solicitud (creada pero sin registrar: respuesta perdida), su id. */
+  identidadDeSolicitud(usuario: string, solicitud: string): Promise<string | null>;
+  /** Vuelve a bloquear (activación parcial). */
+  bloquear(id: string): Promise<void>;
+  /** Fija la contraseña temporal de una identidad adoptada de esta misma solicitud. */
+  fijarPassword(id: string, password: string): Promise<void>;
   /** true si la identidad quedó borrada (o ya no existía). */
   borrarIdentidad(id: string): Promise<boolean>;
   completar(p: Completar): Promise<void>;
   activar(id: string): Promise<void>;
-  nuevaPassword(id: string, password: string, vence: string): Promise<void>;
   password(): string;
   ahora(): Date;
   uuid(): string;
@@ -157,20 +162,23 @@ export async function procesarAlta(body: Record<string, unknown>, coach: Coach, 
   if (inicio.previo === 'otra') return error(409, 'Esa solicitud ya se usó con otros datos. Recarga e intenta de nuevo.');
   if (inicio.previo === 'en_curso') return error(409, 'Esta alta ya se está procesando. Espera unos segundos.', { estado: 'en_curso' });
 
-  // Reintento de un alta que ya terminó (se perdió la respuesta): mismas cuentas, contraseñas nuevas.
+  // Reintento de un alta que ya terminó (se perdió la respuesta): NO se cambian contraseñas (una ficha ya
+  // entregada sigue valiendo y una cuenta en uso no se altera). Se informa el estado; para una ficha nueva
+  // el coach usa "Reiniciar contraseña" (acción explícita).
   if (inicio.previo === 'completa') {
     try {
-      const fichas: Ficha[] = [];
-      for (const f of inicio.resultado) {
-        const password = deps.password();
-        await deps.nuevaPassword(f.usuario_id, password, vence);
-        await deps.activar(f.usuario_id);
-        fichas.push({ ...f, password, vence });
-      }
-      return { status: 200, body: { fichas, recuperada: true } };
+      for (const f of inicio.resultado) await deps.activar(f.usuario_id); // por si la activación había fallado
     } catch {
-      return error(500, 'Las cuentas existen pero no se pudieron preparar las fichas. Vuelve a intentar.', { estado: 'completa' });
+      return error(500, 'Las cuentas existen pero no se pudieron activar. Vuelve a intentar.', { estado: 'completa' });
     }
+    return {
+      status: 200,
+      body: {
+        fichas: [],
+        ya_creadas: inicio.resultado.map((f) => ({ usuario_id: f.usuario_id, usuario: f.usuario, nombre: f.nombre, rol: f.rol })),
+        mensaje: 'Estas cuentas ya se habían creado. Si no tienes la ficha, usa "Reiniciar contraseña".',
+      },
+    };
   }
 
   // Alta interrumpida antes: se limpia lo que esa misma solicitud creó y se empieza de nuevo
@@ -186,13 +194,22 @@ export async function procesarAlta(body: Record<string, unknown>, coach: Coach, 
   async function nuevaIdentidad(base: string, password: string): Promise<{ id: string; usuario: string }> {
     for (let intento = 0; intento < 5; intento++) {
       const usuario = await elegirUsuario(deps, base, excluir);
-      const r = await deps.crearIdentidad(usuario, password);
+      const r = await deps.crearIdentidad(usuario, password, p.solicitud);
       if (r.ok) {
         creados.push(r.id);
         await deps.registrarCreado(p.solicitud, r.id);
         return { id: r.id, usuario };
       }
       if (!r.existe) throw new Error('identidad');
+      // ¿Es nuestra? (Auth la creó pero la respuesta se perdió antes de registrarla): se adopta con su id
+      // para que la compensación o la recuperación la alcancen. Su contraseña se reemplaza al activarla.
+      const propia = await deps.identidadDeSolicitud(usuario, p.solicitud);
+      if (propia) {
+        creados.push(propia);
+        await deps.registrarCreado(p.solicitud, propia);
+        await deps.fijarPassword(propia, password);
+        return { id: propia, usuario };
+      }
       excluir.add(usuario); // alta concurrente tomó ese usuario: probamos el siguiente
     }
     throw new Error('identidad');
@@ -234,11 +251,17 @@ export async function procesarAlta(body: Record<string, unknown>, coach: Coach, 
       : error(500, 'El alta quedó incompleta y bloqueada. Vuelve a intentar para recuperarla.', { estado: 'incompleta' });
   }
 
-  // Activación: solo al terminar. Si falla, el alta está completa pero bloqueada; reintentar la recupera.
+  // Activación: solo al terminar y para TODAS o ninguna. Si una falla, se vuelven a bloquear las ya activadas
+  // (el par alumno–tutor no queda a medias); reintentar la misma solicitud las activa.
+  const activadas: string[] = [];
   try {
-    for (const f of fichas) await deps.activar(f.usuario_id);
+    for (const f of fichas) {
+      await deps.activar(f.usuario_id);
+      activadas.push(f.usuario_id);
+    }
   } catch {
-    return error(500, 'Las cuentas se crearon pero no se pudieron activar. Vuelve a intentar para recuperarlas.', { estado: 'completa' });
+    for (const id of activadas) await deps.bloquear(id).catch(() => {});
+    return error(500, 'Las cuentas se crearon pero no se pudieron activar. Vuelve a intentar para activarlas; después usa "Reiniciar contraseña" para entregar las fichas.', { estado: 'completa' });
   }
   return { status: 200, body: { fichas } };
 }
