@@ -6,7 +6,9 @@
 -- Ahora (con las revisiones de ChatGPT en los puntos de control 0 y 1):
 --  * Admisión atómica antes de Auth: cada intento crea una RESERVA con identidad y vencimiento;
 --    se liquida una sola vez (idempotente) como 'fallo', 'correcto' o 'infra'. Una reserva que vence
---    sin liquidar se devuelve (no cuenta como contraseña incorrecta).
+--    sin liquidar se devuelve (no cuenta como contraseña incorrecta). Vence a los 7 min: más que el
+--    máximo de un worker de Edge Functions (150 s en Free, 400 s en planes de pago). Una liquidación
+--    tardía después del vencimiento no hace nada: la reserva ya no existe (no libera dos veces).
 --  * Solo NIEGA el contador del par usuario+origen verificado:
 --      'ui:<usuario>|<ip>'  5 intentos / 15 min → 10 min.
 --  * Los contadores por origen y por usuario son SEÑALES DE ALERTA (no niegan acceso):
@@ -169,7 +171,7 @@ create or replace function public.purgar_intentos() returns void
 language plpgsql security definer set search_path = '' as $$
 declare r uuid;
 begin
-  for r in select id from public.intentos_reservas where creada < now() - interval '5 minutes' loop
+  for r in select id from public.intentos_reservas where creada < now() - interval '7 minutes' loop
     perform public.liquidar_intento(r, 'infra');
   end loop;
   delete from public.intentos_acceso

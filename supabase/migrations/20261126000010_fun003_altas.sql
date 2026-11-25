@@ -30,7 +30,7 @@ revoke all on public.altas_cuentas from anon, authenticated;
 
 -- Reclama la solicitud. Devuelve el registro (nuevo o existente) con 'previo' = estado anterior:
 --   null → nueva; 'en_curso' (reciente) → otra petición la está procesando; 'completa'; 'incompleta'.
--- Una solicitud 'en_curso' de más de 5 minutos (más que el tiempo máximo de una Edge Function) se considera interrumpida (incompleta).
+-- Una solicitud 'en_curso' de más de 7 minutos (más que el máximo de un worker: 400 s en planes de pago) se considera interrumpida (incompleta).
 create or replace function public.iniciar_alta(p_solicitud uuid, p_coach uuid, p_huella text) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -45,7 +45,7 @@ begin
   if r.coach_id <> p_coach or r.huella <> p_huella then
     return jsonb_build_object('previo', 'otra');
   end if;
-  if r.estado = 'en_curso' and r.actualizada > now() - interval '5 minutes' then
+  if r.estado = 'en_curso' and r.actualizada > now() - interval '7 minutes' then
     return jsonb_build_object('previo', 'en_curso');
   end if;
   if r.estado = 'completa' then
@@ -121,7 +121,7 @@ end $$;
 create or replace function public.altas_incompletas() returns table (solicitud_id uuid, creados uuid[], error text, actualizada timestamptz)
 language sql stable security definer set search_path = '' as $$
   select solicitud_id, creados, error, actualizada from public.altas_cuentas
-  where estado = 'incompleta' or (estado = 'en_curso' and actualizada < now() - interval '5 minutes')
+  where estado = 'incompleta' or (estado = 'en_curso' and actualizada < now() - interval '7 minutes')
 $$;
 
 do $$

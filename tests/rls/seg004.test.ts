@@ -103,7 +103,7 @@ describe('SEG-004 · limitación de intentos', () => {
     await fallo('perdida.w', '10.4.4.4');
     const r = await reservar('perdida.w', '10.4.4.4');
     expect(await contador('ui:perdida.w|10.4.4.4')).toBe(2);
-    await b.comoServicio(`update public.intentos_reservas set creada = now() - interval '6 minutes' where id = '${r.reserva}'`);
+    await b.comoServicio(`update public.intentos_reservas set creada = now() - interval '8 minutes' where id = '${r.reserva}'`);
     await b.comoServicio(`select public.purgar_intentos()`);
     expect(await liquidar(r, 'infra')).toBe(false); // ya no existe
     expect(await contador('ui:perdida.w|10.4.4.4')).toBe(1); // solo queda el fallo real
