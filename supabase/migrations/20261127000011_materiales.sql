@@ -333,8 +333,15 @@ on conflict (id) do nothing;
 -- Descargar: quien puede ver la publicación (el borrador, solo su autor). Un enlace directo sin
 -- permiso no sirve: Storage evalúa esta política en cada descarga y al firmar URLs.
 drop policy if exists mat_storage_select on storage.objects;
+-- Además, para los demás el archivo debe estar REGISTRADO como adjunto: un archivo que quedó a medias
+-- o que el autor quitó del borrador no se vuelve visible cuando la publicación sale con otros adjuntos.
+-- El autor sí ve todo lo que subió a sus propias publicaciones (para retomar o limpiar un borrador).
 create policy mat_storage_select on storage.objects for select to authenticated using (
-  bucket_id = 'materiales' and public.puede_ver_material(public.material_de_ruta(name))
+  bucket_id = 'materiales' and (
+    exists (select 1 from public.materiales m where m.id = public.material_de_ruta(name)
+              and m.autor_id = auth.uid() and public.puede_ver_materiales())
+    or exists (select 1 from public.material_adjuntos a where a.ruta = name and a.tipo = 'archivo'
+                 and a.material_id = public.material_de_ruta(name) and public.puede_ver_material(a.material_id)))
 );
 -- Subir: solo el autor, y solo mientras su publicación es borrador.
 drop policy if exists mat_storage_insert on storage.objects;

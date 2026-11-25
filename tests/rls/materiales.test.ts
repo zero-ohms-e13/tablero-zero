@@ -127,6 +127,24 @@ describe('Materiales · borradores y archivos', () => {
     expect(await b.como(U.diego, `select 1 from storage.objects where name = '${ruta}'`)).toHaveLength(1);
   });
 
+  it('un archivo sin registrar o quitado no se vuelve visible cuando la publicación sale con otro adjunto', async () => {
+    const m = await crear(U.luis, uid('c4', 2), 'Engranes');
+    const valido = `${m}/${uid('f4', 2)}.jpg`;
+    const pendiente = `${m}/${uid('f4', 3)}.jpg`; // subido pero nunca registrado (carga a medias)
+    const quitado = `${m}/${uid('f4', 4)}.jpg`; // registrado y luego quitado del borrador
+    for (const r of [valido, pendiente, quitado]) expect(await subir(U.luis, r, 'image/jpeg', 50_000)).toBeNull();
+    await adjuntar(U.luis, m, valido, 'engrane.jpg');
+    const q1 = await adjuntar(U.luis, m, quitado, 'borrar.jpg');
+    await uno(U.luis, `public.quitar_adjunto('${q1}')`);
+    await uno(U.luis, `public.publicar_material('${m}')`);
+    for (const quien of [U.ana, U.sofia, U.coach]) {
+      const vistos = await b.como<{ name: string }>(quien, `select name from storage.objects where bucket_id = 'materiales' and name like '${m}/%'`);
+      expect(vistos.map((o) => o.name), quien).toEqual([valido]);
+    }
+    // El autor sigue viendo todo lo suyo (para limpiar)
+    expect(await b.como(U.luis, `select 1 from storage.objects where name like '${m}/%'`)).toHaveLength(3);
+  });
+
   it('nadie sube archivos a la publicación de otro ni a una ya publicada', async () => {
     expect(await subir(U.marco, `${PUB}/${uid('f5', 1)}.jpg`, 'image/jpeg', 1000)).toMatch(/row-level security/);
     expect(await subir(U.ana, `${PUB}/${uid('f5', 2)}.jpg`, 'image/jpeg', 1000)).toMatch(/row-level security/);

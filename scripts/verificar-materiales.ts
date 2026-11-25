@@ -107,6 +107,22 @@ async function main() {
   const huerf = (await sofia.storage.from('materiales').createSignedUrl(grande, 60)).error;
   ok(!!huerf, 'los archivos de un borrador no son accesibles para otros');
 
+  // 5b. Archivo subido pero nunca registrado: no se vuelve visible al publicar con otro adjunto
+  const h = (await ana.rpc('crear_material', { p_cliente_id: randomUUID(), p_titulo: 'Con huérfano', p_categoria: 'otro' })).data as string;
+  creados.push(h);
+  const bueno = `${h}/${randomUUID()}.png`;
+  const huerfano = `${h}/${randomUUID()}.png`;
+  await ana.storage.from('materiales').upload(bueno, new Blob([PNG], { type: 'image/png' }), { contentType: 'image/png' });
+  await ana.storage.from('materiales').upload(huerfano, new Blob([PNG], { type: 'image/png' }), { contentType: 'image/png' });
+  await ana.rpc('agregar_adjunto', { p_material: h, p_tipo: 'archivo', p_nombre: 'bueno.png', p_ruta: bueno });
+  await ana.rpc('publicar_material', { p_material: h });
+  const lista = (await sofia.storage.from('materiales').list(h)).data?.map((f) => `${h}/${f.name}`) ?? [];
+  const firmaH = await sofia.storage.from('materiales').createSignedUrl(huerfano, 60);
+  const bajaH = await sofia.storage.from('materiales').download(huerfano);
+  const firmaB = await sofia.storage.from('materiales').createSignedUrl(bueno, 60);
+  ok(lista.length === 1 && lista[0] === bueno, 'al listar la carpeta, otros solo ven el archivo registrado');
+  ok(!!firmaH.error && !!bajaH.error && !firmaB.error, 'el archivo sin registrar no se firma ni se descarga; el registrado sí');
+
   // 6. Reintento sin duplicados
   const cli = randomUUID();
   const r1 = (await ana.rpc('crear_material', { p_cliente_id: cli, p_titulo: 'Reintento', p_categoria: 'otro' })).data as string;
