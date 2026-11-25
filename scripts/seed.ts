@@ -49,9 +49,10 @@ async function main() {
     console.error('El seed borra TODAS las tareas y metas. Úsalo solo en una base de pruebas: npm run seed -- --solo-pruebas');
     process.exit(1);
   }
-  const { data: existentes } = await srv.from('profiles').select('usuario');
-  const demo = new Set(CUENTAS.map((c) => c.usuario));
-  const reales = (existentes ?? []).filter((p) => !demo.has(p.usuario));
+  // La cuenta del coach siempre cuenta como real: si existe, el seed no corre (úsalo en un proyecto de pruebas vacío).
+  const { data: existentes } = await srv.from('profiles').select('usuario, rol_global');
+  const demoAlumnos = new Set(CUENTAS.filter((c) => c.rol !== "coach").map((c) => c.usuario));
+  const reales = (existentes ?? []).filter((p) => p.rol_global === "coach" || !demoAlumnos.has(p.usuario));
   if (reales.length) {
     console.error(`No corro el seed: hay ${reales.length} cuentas que no son de prueba (por ejemplo ${reales[0].usuario}). Borraría sus tareas.`);
     process.exit(1);
