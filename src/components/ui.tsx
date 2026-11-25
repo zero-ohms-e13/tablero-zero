@@ -119,8 +119,13 @@ export function Campo({ id, label, ayuda, error, children }: { id: string; label
 
 // ---------- Mensajes ----------
 export function Alerta({ children }: { children: ReactNode }) {
+  // Que el error se vea aunque el botón que lo causó esté lejos (formularios largos)
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }, [children]);
   return (
-    <div role="alert" className="flex items-start gap-2.5 rounded-campo bg-[#F6D6D6] p-3 text-sm leading-[1.4] text-vino">
+    <div ref={ref} role="alert" className="flex items-start gap-2.5 rounded-campo bg-[#F6D6D6] p-3 text-sm leading-[1.4] text-vino">
       <span className="mt-px shrink-0"><Icon name="alerta" /></span>
       <span>{children}</span>
     </div>

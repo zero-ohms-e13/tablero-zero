@@ -77,7 +77,7 @@ export default function Perfil() {
     <>
       <HeaderVino atras={esCoach ? '/coach' : esTutor ? '/familia' : undefined} titulo={esCoach || esTutor ? 'Perfil' : undefined}>
         <div className="flex items-center gap-3.5">
-          <Avatar iniciales={perfil.iniciales} color={perfil.color} size={64} />
+          <Avatar iniciales={perfil.iniciales} color={perfil.color} size={64} className="ring-2 ring-crema/50" />
           <div className="flex flex-col gap-1">
             <h1 className="m-0 font-titulo text-2xl font-bold">{perfil.nombre_visible}</h1>
             <span className="font-mono text-[13px] opacity-90">{perfil.usuario}</span>

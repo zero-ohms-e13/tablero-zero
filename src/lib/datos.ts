@@ -151,8 +151,21 @@ export function useAgregarEnlace() {
   return useMutation({
     mutationFn: async ({ tarea_id, url, subida_por }: { tarea_id: string; url: string; subida_por: string }) => {
       const limpio = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
-      new URL(limpio); // lanza si no es válida
+      // Dominio con punto, sin espacios (el parser del navegador acepta casi todo)
+      if (!/^https?:\/\/[^\s/?#]+\.[^\s/?#]{2,}([/?#]\S*)?$/i.test(limpio)) throw new Error('Enlace no válido');
+      new URL(limpio);
       return ok(await supabase.from('evidencias').insert({ tarea_id, tipo: 'enlace', url: limpio, subida_por }).select('id'));
+    },
+    onSuccess: (_d, v) => inv(v.tarea_id),
+  });
+}
+
+export function useBorrarEvidencia() {
+  const inv = useInvalidar();
+  return useMutation({
+    mutationFn: async (e: { id: string; tarea_id: string; tipo: 'foto' | 'enlace'; url: string }) => {
+      if (e.tipo === 'foto') await supabase.storage.from('evidencias').remove([e.url]);
+      return ok(await supabase.from('evidencias').delete().eq('id', e.id).select('id'));
     },
     onSuccess: (_d, v) => inv(v.tarea_id),
   });

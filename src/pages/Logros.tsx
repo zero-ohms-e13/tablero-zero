@@ -11,7 +11,7 @@ import { supabase } from '../lib/supabase';
 
 type Logro = {
   tarea_id: string; titulo: string; robot: string; area_id: string; aprobada_at: string;
-  quien: string; iniciales: string; color: string; felicitaciones: number; yo_felicite: boolean;
+  quien: string; iniciales: string; color: string; felicitaciones: number; yo_felicite: boolean; es_mio: boolean;
 };
 type Vista = 'equipo' | 'area' | 'mios';
 
@@ -73,6 +73,11 @@ export default function Logros() {
                 <span className="shrink-0 rounded-full bg-crema px-2.5 py-1 font-mono text-[11px] text-vino">{l.robot}</span>
               </div>
               <p className="m-0 text-sm leading-[1.4]">Terminó «{l.titulo}»</p>
+              {l.es_mio ? (
+                <span className="flex h-11 items-center gap-2 self-start rounded-campo bg-crema px-4 text-sm font-semibold text-vino">
+                  <Icon name="estrella" size={18} /> {l.felicitaciones === 0 ? 'Tu logro' : l.felicitaciones === 1 ? '1 felicitación para ti' : `${l.felicitaciones} felicitaciones para ti`}
+                </span>
+              ) : (
               <button
                 onClick={() => felicitar.mutate(l.tarea_id)}
                 aria-pressed={l.yo_felicite}
@@ -81,6 +86,7 @@ export default function Logros() {
                 <Icon name="estrella" size={18} fill={l.yo_felicite ? '#3A0101' : undefined} />
                 {l.yo_felicite ? 'Felicitaste' : 'Felicitar'} · {l.felicitaciones}
               </button>
+              )}
             </article>
           );
         })}

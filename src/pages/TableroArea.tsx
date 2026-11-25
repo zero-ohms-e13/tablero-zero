@@ -178,7 +178,7 @@ export default function TableroArea({ modo }: { modo: 'coach' | 'lider' }) {
   if (modo === 'coach') return <LayoutCoach>{contenido}</LayoutCoach>;
   return (
     <div className="min-h-screen bg-fondo">
-      <HeaderVino titulo="Tablero del área" subtitulo="Vista completa para computadora" atras="/area" />
+      <HeaderVino titulo="Tablero del área" subtitulo="Arrastra las tarjetas entre columnas" atras="/area" />
       <main className="mx-auto flex max-w-[1400px] flex-col gap-[22px] px-4 py-5 md:px-8">{contenido}</main>
     </div>
   );

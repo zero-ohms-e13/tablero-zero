@@ -90,7 +90,7 @@ export default function MiTablero() {
     <PantallaCel>
       <HeaderVino>
         <div className="flex items-center gap-3">
-          <Avatar iniciales={perfil.iniciales} color={perfil.color} size={48} />
+          <Avatar iniciales={perfil.iniciales} color={perfil.color} size={48} className="ring-2 ring-crema/50" />
           <div className="flex flex-grow flex-col gap-0.5">
             <span className="font-titulo text-[22px] font-bold">Hola, {perfil.nombre_visible.split(' ')[0]}</span>
             <span className="text-[13px] opacity-90">{[areaPrincipal?.nombre, robotTexto].filter(Boolean).join(' · ')}</span>

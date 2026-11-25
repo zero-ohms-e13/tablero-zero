@@ -6,7 +6,8 @@ import { Alerta, AvisoBloqueo, Boton, Campo, claseCampo, Sheet } from '../compon
 import { entrar, useSesion, type ErrorEntrar } from '../lib/sesion';
 import { configurado, recordar, supabase } from '../lib/supabase';
 
-const MENSAJES: Record<ErrorEntrar['codigo'], string> = {
+const MENSAJES: Record<ErrorEntrar['codigo'] | 'vacio', string> = {
+  vacio: 'Escribe tu usuario y tu contraseña.',
   incorrecta: 'El usuario o la contraseña no coinciden. Revisa mayúsculas o pide un reinicio al coach.',
   bloqueada: '',
   inactiva: 'Esta cuenta está desactivada. Habla con el coach.',
@@ -21,7 +22,7 @@ export default function Entrar() {
   const [password, setPassword] = useState('');
   const [ver, setVer] = useState(false);
   const [recordarme, setRecordarme] = useState(recordar.get());
-  const [error, setError] = useState<ErrorEntrar | null>(null);
+  const [error, setError] = useState<ErrorEntrar | { codigo: 'vacio'; restantes?: number } | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [olvido, setOlvido] = useState(false);
 
@@ -30,7 +31,7 @@ export default function Entrar() {
   async function enviar(e: FormEvent) {
     e.preventDefault();
     if (!configurado) return setError({ codigo: 'config' });
-    if (!usuario.trim() || !password) return setError({ codigo: 'incorrecta' });
+    if (!usuario.trim() || !password) return setError({ codigo: 'vacio' });
     setEnviando(true);
     setError(null);
     const r = await entrar(usuario, password, recordarme);

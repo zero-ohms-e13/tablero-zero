@@ -105,7 +105,7 @@ export default function Cuentas() {
       )}
 
       <div className="flex flex-wrap items-start gap-[18px]">
-        <section className="flex min-w-0 flex-[3_1_640px] flex-col gap-3 rounded-[20px] border border-linea bg-white px-5 py-[18px]">
+        <section className="flex min-w-0 flex-[3_1_700px] flex-col gap-3 rounded-[20px] border border-linea bg-white px-5 py-[18px]">
           <div className="flex flex-wrap items-center gap-1.5">
             <div role="tablist" aria-label="Tipo de cuenta" className="flex flex-wrap gap-1.5">
               {([['alumnos', `Alumnos · ${alumnos.length}`], ['tutores', `Tutores · ${tutores.length}`], ['lideres', `Líderes · ${lideres.length}`], ['mentores', `Coach y mentores · ${mentores.length}`]] as [Pestana, string][]).map(([k, t]) => (

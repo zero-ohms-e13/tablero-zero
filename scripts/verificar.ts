@@ -4,7 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 import { config } from 'dotenv';
 
 config({ path: 'supabase/.env' });
-const { SUPABASE_URL: URL_, SUPABASE_ANON_KEY: ANON, SEED_PASSWORD: PASS } = process.env as Record<string, string>;
+const { SUPABASE_URL: URL_, SUPABASE_ANON_KEY: ANON, SEED_PASSWORD: PASS, SUPABASE_SERVICE_ROLE_KEY: SRV } = process.env as Record<string, string>;
+const INICIO = new Date().toISOString();
 let fallas = 0;
 const ok = (c: boolean, m: string) => {
   console.log(`${c ? 'OK   ' : 'FALLA'} ${m}`);
@@ -89,7 +90,11 @@ async function main() {
   });
   ok(r2.status === 403, 'una alumna no puede usar admin-accounts');
 
-  console.log(fallas ? `\n${fallas} fallas` : '\nTodo bien.');
+  // Limpieza: quita los avisos e intentos que generó esta prueba para no ensuciar los datos reales
+  const srv = createClient(URL_, SRV, { auth: { persistSession: false } });
+  await srv.from('avisos').delete().gte('creado_at', INICIO).in('tipo', ['aprobada', 'bateria']);
+  await srv.from('intentos_login').delete().in('usuario', ['nadie.x', 'ana.l']);
+  console.log(fallas ? `\n${fallas} fallas` : '\nTodo bien (avisos de prueba limpiados).');
   process.exit(fallas ? 1 : 0);
 }
 main().catch((e) => {

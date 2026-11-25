@@ -6,12 +6,12 @@ import { Avatar, Boton, Cargando, Chip, ChipFecha, EmptyState, HeaderVino, Sheet
 import { PedirAyuda } from './MiTablero';
 import { RegresarConNota } from './Revisar';
 import {
-  esMia, useAgregarEnlace, useAprobar, useAreas, useAvanceMetas, useComentar, useMarcarPaso, useMembresias, useMetas,
+  esMia, useAgregarEnlace, useAprobar, useBorrarEvidencia, useAreas, useAvanceMetas, useComentar, useMarcarPaso, useMembresias, useMetas,
   useMoverEstado, usePedirAyuda, usePerfiles, useRegresar, useSubirFoto, useTareaDetalle,
 } from '../lib/datos';
 import { chipFecha, haceCuanto } from '../lib/fechas';
 import { useSesion } from '../lib/sesion';
-import { ETIQUETA_ESTADO, ROBOT_NOMBRE } from '../lib/tipos';
+import { ETIQUETA_ESTADO, ROBOT_NOMBRE, type Evidencia } from '../lib/tipos';
 
 export default function TareaDetalle() {
   const { id } = useParams();
@@ -37,6 +37,8 @@ export default function TareaDetalle() {
   const [verAyuda, setVerAyuda] = useState(false);
   const [verRegresar, setVerRegresar] = useState(false);
   const archivo = useRef<HTMLInputElement>(null);
+  const borrarEv = useBorrarEvidencia();
+  const [quitar, setQuitar] = useState<Evidencia | null>(null);
 
   const volver = esTutor ? '/familia' : esCoach ? '/coach' : '/';
   if (q.isLoading) return <div className="mx-auto max-w-[480px]"><HeaderVino titulo="Tarea" atras={volver} /><Cargando /></div>;
@@ -68,6 +70,7 @@ export default function TareaDetalle() {
     return corto;
   };
   const hechos = t.tarea_pasos.filter((p) => p.hecho).length;
+  const puedeQuitar = (e: Evidencia) => !hecha && !esTutor && (gestor || e.subida_por === perfil.id);
   const fechaTxt = chipFecha(t.fecha_limite, hecha).texto;
 
   async function enviarComentario(e: FormEvent) {
@@ -155,8 +158,22 @@ export default function TareaDetalle() {
         {t.para_que_sirve && (
           <p className="m-0 rounded-[14px] border border-linea bg-white px-3.5 py-3 text-sm leading-[1.5]"><strong className="text-vino">Para qué sirve:</strong> {t.para_que_sirve}</p>
         )}
-        {t.pide_ayuda && t.mensaje_ayuda && !hecha && (
-          <p className="m-0 rounded-[14px] border-2 border-ambar bg-white px-3.5 py-3 text-sm leading-[1.5]"><strong className="text-vino">Pidió ayuda:</strong> “{t.mensaje_ayuda}”</p>
+        {t.pide_ayuda && !hecha && (
+          <div className="flex flex-col gap-2 rounded-[14px] border-2 border-ambar bg-white px-3.5 py-3 text-sm leading-[1.5]">
+            <p className="m-0"><strong className="text-vino">Pidió ayuda{t.mensaje_ayuda ? ':' : '.'}</strong>{t.mensaje_ayuda ? ` “${t.mensaje_ayuda}”` : ''}</p>
+            {gestor && !mia && (
+              <Boton variante="secundario" alto={44} className="self-start text-sm" disabled={ayuda.isPending} onClick={async () => {
+                try {
+                  await ayuda.mutateAsync({ id: t.id, pide: false });
+                  toast({ titulo: 'Listo.', texto: 'Quitamos la solicitud de ayuda.' });
+                } catch (err) {
+                  toast({ tipo: 'error', titulo: 'No se pudo guardar.', texto: (err as Error).message });
+                }
+              }}>
+                <Icon name="palomita" size={18} /> Ya lo ayudé
+              </Boton>
+            )}
+          </div>
         )}
         {meta && (
           <div className="flex flex-col gap-2 rounded-[14px] bg-crema px-3.5 py-3 text-tinta">
@@ -201,9 +218,16 @@ export default function TareaDetalle() {
         {(evidencias.some((e) => e.tipo === 'foto') || (trabaja && !hecha)) && (
           <div className="grid grid-cols-3 gap-2">
             {evidencias.filter((e) => e.tipo === 'foto').map((e, i) => (
-              <a key={e.id} href={firmadas[e.id]} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-campo" style={{ background: 'repeating-linear-gradient(135deg,#EFE2C8 0 8px,#F6EEDF 8px 16px)' }}>
-                {firmadas[e.id] && <img src={firmadas[e.id]} alt={`Foto ${i + 1} de la evidencia`} loading="lazy" className="h-full w-full object-cover" />}
-              </a>
+              <div key={e.id} className="relative">
+                <a href={firmadas[e.id]} target="_blank" rel="noreferrer" aria-label={`Abrir foto ${i + 1} de la evidencia`} className="block aspect-square overflow-hidden rounded-campo" style={{ background: 'repeating-linear-gradient(135deg,#EFE2C8 0 8px,#F6EEDF 8px 16px)' }}>
+                  {firmadas[e.id] && <img src={firmadas[e.id]} alt={`Foto ${i + 1} de la evidencia`} loading="lazy" className="h-full w-full object-cover" />}
+                </a>
+                {puedeQuitar(e) && (
+                  <button aria-label={`Quitar foto ${i + 1}`} onClick={() => setQuitar(e)} className="absolute right-1 top-1 flex h-9 w-9 items-center justify-center rounded-full border-0 bg-tinta/70 text-white">
+                    <Icon name="cerrar" size={16} />
+                  </button>
+                )}
+              </div>
             ))}
             {trabaja && !hecha && (
               <>
@@ -218,10 +242,17 @@ export default function TareaDetalle() {
           </div>
         )}
         {evidencias.filter((e) => e.tipo === 'enlace').map((e) => (
-          <a key={e.id} href={e.url} target="_blank" rel="noreferrer" className="flex min-h-tap items-center gap-2.5 rounded-campo border border-linea bg-white px-3 py-2.5 text-[13px] text-tinta no-underline">
-            <Icon name="enlace" size={18} />
-            <span className="flex-grow truncate font-mono text-xs">{e.url.replace(/^https?:\/\//, '')}</span>
-          </a>
+          <div key={e.id} className="flex items-center gap-2">
+            <a href={e.url} target="_blank" rel="noreferrer" className="flex min-h-tap min-w-0 flex-grow items-center gap-2.5 rounded-campo border border-linea bg-white px-3 py-2.5 text-[13px] text-tinta no-underline">
+              <Icon name="enlace" size={18} />
+              <span className="flex-grow truncate font-mono text-xs">{e.url.replace(/^https?:\/\//, '')}</span>
+            </a>
+            {puedeQuitar(e) && (
+              <button aria-label={`Quitar enlace ${e.url.replace(/^https?:\/\//, '')}`} onClick={() => setQuitar(e)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-campo border border-linea-campo bg-white text-vino">
+                <Icon name="cerrar" size={16} />
+              </button>
+            )}
+          </div>
         ))}
         {!evidencias.length && !trabaja && <span className="text-sm text-tinta-3">Aún no hay evidencia.</span>}
         {trabaja && !hecha && (
@@ -292,8 +323,23 @@ export default function TareaDetalle() {
         </div>
       )}
 
+      <Sheet abierto={!!quitar} onCerrar={() => setQuitar(null)} titulo={quitar?.tipo === 'foto' ? 'Quitar foto' : 'Quitar enlace'}>
+        <p className="m-0 text-sm text-tinta-2">Se quita de la evidencia de esta tarea{quitar?.tipo === 'foto' ? ' y se borra la foto' : ''}. No se puede deshacer.</p>
+        <div className="flex gap-2">
+          <Boton variante="secundario" onClick={() => setQuitar(null)}>Cancelar</Boton>
+          <Boton className="flex-grow" onClick={async () => {
+            try {
+              await borrarEv.mutateAsync(quitar!);
+              toast({ titulo: 'Evidencia quitada.' });
+            } catch (err) {
+              toast({ tipo: 'error', titulo: 'No se pudo quitar.', texto: (err as Error).message });
+            }
+            setQuitar(null);
+          }}>Sí, quitar</Boton>
+        </div>
+      </Sheet>
       <Sheet abierto={verEnlace} onCerrar={() => setVerEnlace(false)} titulo="Agregar enlace">
-        <form onSubmit={guardarEnlace} className="flex flex-col gap-3">
+        <form onSubmit={guardarEnlace} noValidate className="flex flex-col gap-3">
           <label htmlFor="url-evidencia" className="text-[13px] font-semibold text-vino">Dirección del enlace</label>
           <input id="url-evidencia" type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="github.com/…" className={`${claseCampo} font-mono`} />
           <div className="flex gap-2">

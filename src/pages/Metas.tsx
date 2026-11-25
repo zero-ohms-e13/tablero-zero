@@ -1,6 +1,6 @@
 // Metas y competencias (coach). Cada tarea apunta a una meta comprobable en la cancha.
 // Incluye exportar la bitácora (historial) de una meta a CSV o PDF para el Engineering Notebook.
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Battery } from '../components/Battery';
@@ -30,6 +30,22 @@ export default function Metas() {
   const [error, setError] = useState<string | null>(null);
   const [editarComp, setEditarComp] = useState<Partial<Competencia> | null>(null);
   const [borrar, setBorrar] = useState<Meta | null>(null);
+  const [confirmarBorrarComp, setConfirmarBorrarComp] = useState(false);
+
+  // La meta nueva propone la competencia que estás viendo
+  useEffect(() => {
+    setF((x) => (x.id || x.titulo ? x : { ...x, competencia_id: comp?.id ?? null }));
+  }, [comp?.id]);
+
+  async function borrarComp() {
+    const c = editarComp!;
+    const r = await supabase.from('competencias').delete().eq('id', c.id!).select('id');
+    if (r.error || !r.data?.length) return setError('No se pudo borrar la competencia.');
+    setEditarComp(null);
+    setCompSel('');
+    toast({ titulo: 'Competencia borrada.', texto: 'Sus metas quedaron sin competencia.' });
+    recargar();
+  }
 
   const lista = compSel === 'todas' ? metas : metas.filter((m) => (comp ? m.competencia_id === comp.id : !m.competencia_id));
   const recargar = () => ['metas', 'competencias', 'avance_metas'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
@@ -184,7 +200,7 @@ export default function Metas() {
         </section>
       </div>
 
-      <Sheet abierto={!!editarComp} onCerrar={() => { setEditarComp(null); setError(null); }} titulo={editarComp?.id ? 'Editar competencia' : 'Agregar competencia'}>
+      <Sheet abierto={!!editarComp} onCerrar={() => { setEditarComp(null); setError(null); setConfirmarBorrarComp(false); }} titulo={editarComp?.id ? 'Editar competencia' : 'Agregar competencia'}>
         {editarComp && (
           <form onSubmit={guardarComp} className="flex flex-col gap-3">
             {error && <Alerta>{error}</Alerta>}
@@ -198,6 +214,20 @@ export default function Metas() {
               <Boton type="button" variante="secundario" onClick={() => setEditarComp(null)}>Cancelar</Boton>
               <Boton type="submit" className="flex-grow">Guardar competencia</Boton>
             </div>
+            {editarComp.id && !confirmarBorrarComp && (
+              <button type="button" onClick={() => setConfirmarBorrarComp(true)} className="min-h-tap self-center bg-transparent text-[13px] text-vino underline">
+                Borrar esta competencia
+              </button>
+            )}
+            {editarComp.id && confirmarBorrarComp && (
+              <div role="alert" className="flex flex-col gap-2 rounded-campo bg-[#F6D6D6] p-3 text-sm text-vino">
+                <span>¿Seguro? Se borra la competencia; sus metas se quedan sin competencia. No se puede deshacer.</span>
+                <div className="flex gap-2">
+                  <Boton type="button" variante="secundario" alto={44} onClick={() => setConfirmarBorrarComp(false)}>No</Boton>
+                  <Boton type="button" alto={44} className="flex-grow" onClick={() => { setConfirmarBorrarComp(false); borrarComp(); }}>Sí, borrar</Boton>
+                </div>
+              </div>
+            )}
           </form>
         )}
       </Sheet>

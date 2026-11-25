@@ -1,5 +1,6 @@
 // Menú lateral del coach y columnas del kanban (solo lectura en Fase 1).
 import { useState, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink } from 'react-router-dom';
 import { Icon } from './Icon';
 import { Wordmark } from './Marca';
@@ -12,30 +13,52 @@ import type { Perfil, Tarea } from '../lib/tipos';
 export function SidebarCoach() {
   const { perfil, salir } = useSesion();
   const [editar, setEditar] = useState(false);
-  const item = (to: string, texto: string, end = false) => (
+  const [menu, setMenu] = useState(false); // solo en celular
+  const { data: sinLeer = 0 } = useQuery({
+    queryKey: ['avisos_sin_leer'],
+    queryFn: async () => (await supabase.from('avisos').select('id', { count: 'exact', head: true }).eq('leido', false)).count ?? 0,
+    refetchInterval: 60_000,
+  });
+  const item = (to: string, texto: string, end = false, n = 0) => (
     <NavLink
       to={to}
       end={end}
+      onClick={() => setMenu(false)}
       className={({ isActive }) =>
         `rounded-[10px] px-3.5 py-[11px] text-sm no-underline ${isActive ? 'bg-ambar font-semibold text-vino-oscuro hover:text-vino-oscuro' : 'text-crema hover:bg-crema/10 hover:text-crema'}`
       }
     >
-      {texto}
+      <span className="flex items-center justify-between gap-2">
+        {texto}
+        {n > 0 && <span className="rounded-full bg-ambar px-2 py-0.5 text-[11px] font-bold text-vino-oscuro" aria-label={`${n} sin leer`}>{n}</span>}
+      </span>
     </NavLink>
   );
   return (
     <aside className="box-border flex w-full flex-col gap-1 bg-vino px-[18px] py-5 text-crema md:min-h-screen md:w-[250px] md:shrink-0 md:py-7">
-      <div className="mb-4 flex flex-col gap-2.5 px-1.5 md:mb-6">
-        <Wordmark />
-        <span className="text-xs opacity-85">Tablero Zero · Coach</span>
+      <div className="flex items-center justify-between gap-3 px-1.5 md:mb-6 md:block">
+        <div className="flex flex-col gap-2.5">
+          <Wordmark />
+          <span className="text-xs opacity-85">Tablero Zero · Coach</span>
+        </div>
+        <button
+          onClick={() => setMenu((m) => !m)}
+          aria-expanded={menu}
+          aria-controls="menu-coach"
+          className="relative flex h-11 shrink-0 items-center gap-2 rounded-campo border border-crema/35 bg-transparent px-3 text-sm text-crema md:hidden"
+        >
+          <Icon name={menu ? 'cerrar' : 'tablero'} size={18} /> Menú
+          {sinLeer > 0 && !menu && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-ambar"><span className="sr-only">, hay avisos sin leer</span></span>}
+        </button>
       </div>
+      <div id="menu-coach" className={`${menu ? 'flex' : 'hidden'} mt-4 flex-col gap-1 md:mt-0 md:flex md:flex-grow`}>
       <nav aria-label="Coach" className="flex flex-col gap-1">
         {item('/coach', 'Panel', true)}
         {item('/coach/area', 'Tableros por área')}
         {item('/coach/metas', 'Metas y competencias')}
         {item('/coach/cuentas', 'Cuentas y fichas de tutor')}
         {item('/coach/logros', 'Logros del equipo')}
-        {item('/avisos', 'Avisos y mensajes')}
+        {item('/avisos', 'Avisos y mensajes', false, sinLeer)}
         {item('/perfil', 'Mi perfil')}
       </nav>
       <div className="mt-4 flex flex-col gap-1 border-t border-crema/20 pt-4 md:mt-auto">
@@ -46,6 +69,7 @@ export function SidebarCoach() {
         <button onClick={salir} className="flex min-h-tap items-center gap-2 rounded-[10px] bg-transparent px-3.5 text-left text-[13px] text-crema hover:bg-crema/10">
           <Icon name="salir" size={16} /> Cerrar sesión
         </button>
+      </div>
       </div>
       {perfil && <EditarNombre perfil={perfil} abierto={editar} onCerrar={() => setEditar(false)} />}
     </aside>

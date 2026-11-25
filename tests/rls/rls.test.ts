@@ -171,6 +171,16 @@ describe('Fase 2 y 3', () => {
     expect(alumna[0].quien).toBe('Sofía');
   });
 
+  it('logros: una tarea compartida muestra a todos ("Ana y Diego")', async () => {
+    await como(U.marco, `select aprobar_tarea('${T.odometria}')`);
+    const [r] = await como<{ quien: string; es_mio: boolean }>(U.ana, `select quien, es_mio from logros_equipo(50) where tarea_id = '${T.odometria}'`);
+    expect(r).toEqual({ quien: 'Ana y Diego', es_mio: true });
+  });
+
+  it('nadie se felicita a sí mismo', async () => {
+    expect(await falla(U.ana, `select felicitar('${T.odometria}')`)).toMatch(/ti mismo/);
+  });
+
   it('felicitar: alumnos sí (cualquier área), tutores no; avisa a quien la terminó', async () => {
     const [r] = await como<{ felicitar: boolean }>(U.ana, `select felicitar('${T.post}')`);
     expect(r.felicitar).toBe(true);

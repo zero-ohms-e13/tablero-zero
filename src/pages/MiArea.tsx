@@ -126,7 +126,7 @@ function VistaLider({ area, tareas, piden, porRevisar, equipo, responsables }: {
                 <span className="text-sm font-semibold">{r?.nombre_visible.split(' ')[0]} · {t.titulo}</span>
                 {t.mensaje_ayuda && <span className="text-xs text-tinta-2">“{t.mensaje_ayuda}”</span>}
               </div>
-              <Link to={`/tarea/${t.id}`} className="flex h-11 shrink-0 items-center rounded-[10px] bg-vino px-3 text-[13px] font-semibold text-crema no-underline hover:text-crema">Ayudar</Link>
+              <Link to={`/tarea/${t.id}`} aria-label={`Ayudar a ${r?.nombre_visible.split(' ')[0] ?? 'el equipo'} con ${t.titulo}`} className="flex h-11 shrink-0 items-center rounded-[10px] bg-vino px-3 text-[13px] font-semibold text-crema no-underline hover:text-crema">Ayudar</Link>
             </div>
           );
         })}

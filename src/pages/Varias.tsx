@@ -153,7 +153,7 @@ export function Familia() {
     <div className="mx-auto flex min-h-screen max-w-[480px] flex-col bg-fondo pb-10">
       <HeaderVino>
         <div className="flex items-center gap-3">
-          {hijo && <Avatar iniciales={hijo.iniciales} color={hijo.color} size={48} />}
+          {hijo && <Avatar iniciales={hijo.iniciales} color={hijo.color} size={48} className="ring-2 ring-crema/50" />}
           <div className="flex flex-grow flex-col gap-0.5">
             <span className="font-mono text-[11px] tracking-[.06em] opacity-85">Cuenta de tutor · solo lectura</span>
             <span className="font-titulo text-[22px] font-bold">{hijo ? `Así va ${nombre}` : 'Sin alumno vinculado'}</span>
