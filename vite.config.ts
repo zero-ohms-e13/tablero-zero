@@ -26,17 +26,15 @@ export default defineConfig({
       workbox: {
         importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.origin.includes('fonts.g'),
             handler: 'CacheFirst',
             options: { cacheName: 'fuentes', expiration: { maxEntries: 20, maxAgeSeconds: 31536000 } },
           },
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith('/rest/v1/'),
-            handler: 'NetworkFirst',
-            options: { cacheName: 'datos', networkTimeoutSeconds: 5, expiration: { maxEntries: 200, maxAgeSeconds: 604800 } },
-          },
+          // SEG-003: las respuestas autenticadas de Supabase (/rest, /auth, /storage, /functions) NO se guardan
+          // en la caché del service worker: es compartida entre usuarios del mismo dispositivo.
         ],
       },
     }),
