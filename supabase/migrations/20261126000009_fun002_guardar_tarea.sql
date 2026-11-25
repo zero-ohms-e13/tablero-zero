@@ -11,6 +11,7 @@
 --   { "id": uuid,                 -- obligatorio; en altas lo genera el cliente (reintento idempotente)
 --     "nueva": bool,              -- true en alta
 --     "version": timestamptz,     -- en edición: actualizada_at que vio el formulario
+--     "guardado": uuid,           -- token de este intento de guardado (mismo en reintentos)
 --     "titulo", "para_que_sirve", "area_id", "meta_id", "robot", "fecha_limite", "herramienta_url",
 --     "responsables": [uuid],
 --     "pasos": [{ "id": uuid, "texto": text }] }  -- ids generados por el cliente para pasos nuevos
@@ -19,10 +20,15 @@
 -- Concurrencia: si la tarea cambió desde que se abrió el formulario → error 'conflicto' (40001).
 -- Reintento de un alta cuya respuesta se perdió: misma id + mismo autor → se aplica como edición
 -- idempotente (no duplica tarea, responsables, pasos ni avisos).
+-- Reintento de una EDICIÓN confirmada cuya respuesta se perdió: mismo token 'guardado' que el último
+-- aplicado → se reconoce como ya guardada (no es conflicto, no repite avisos ni historial).
 -- Los pasos existentes conservan su id y su estado "hecho"; solo cambian orden y texto.
 --
 -- Recuperación: la función es nueva; el cliente anterior sigue funcionando con las tablas.
 -- Para revertir: drop function public.guardar_tarea(jsonb) y volver al cliente previo.
+
+-- Token del último guardado aplicado (idempotencia de ediciones cuya respuesta se perdió). Aditivo.
+alter table public.tareas add column if not exists ultimo_guardado uuid;
 
 create or replace function public.guardar_tarea(p jsonb) returns jsonb
 language plpgsql security invoker set search_path = '' as $$
@@ -30,6 +36,7 @@ declare
   v_id uuid := (p ->> 'id')::uuid;
   v_nueva boolean := coalesce((p ->> 'nueva')::boolean, false);
   v_version timestamptz := (p ->> 'version')::timestamptz;
+  v_guardado uuid := nullif(p ->> 'guardado', '')::uuid;
   v_resp uuid[] := coalesce(array(select jsonb_array_elements_text(coalesce(p -> 'responsables', '[]'::jsonb))::uuid), '{}');
   v_pasos jsonb := coalesce(p -> 'pasos', '[]'::jsonb);
   t public.tareas;
@@ -60,13 +67,19 @@ begin
       raise exception 'La tarea ya no existe o no puedes editarla.' using errcode = 'P0002';
     end if;
     -- Alta (RLS tareas_insert: coach o líder del área, creada_por = yo)
-    insert into public.tareas (id, titulo, para_que_sirve, area_id, meta_id, robot, fecha_limite, herramienta_url, creada_por)
+    insert into public.tareas (id, titulo, para_que_sirve, area_id, meta_id, robot, fecha_limite, herramienta_url, creada_por, ultimo_guardado)
     values (v_id, trim(p ->> 'titulo'), coalesce(trim(p ->> 'para_que_sirve'), ''), (p ->> 'area_id')::uuid,
             nullif(p ->> 'meta_id', '')::uuid, p ->> 'robot', nullif(p ->> 'fecha_limite', '')::timestamptz,
-            nullif(trim(p ->> 'herramienta_url'), ''), auth.uid());
+            nullif(trim(p ->> 'herramienta_url'), ''), auth.uid(), v_guardado);
   else
     if v_nueva and t.creada_por is distinct from auth.uid() then
       raise exception 'conflicto: ese identificador ya existe.' using errcode = '40001';
+    end if;
+    if v_guardado is not null and t.ultimo_guardado = v_guardado then
+      if not public.puede_gestionar_tarea(v_id) then
+        raise exception 'Solo tu líder o el coach pueden editar esta tarea.' using errcode = '42501';
+      end if;
+      return jsonb_build_object('id', v_id, 'version', t.actualizada_at, 'repetido', true);
     end if;
     if not v_nueva and (v_version is null or t.actualizada_at <> v_version) then
       raise exception 'conflicto: alguien más cambió esta tarea. Recarga para ver los cambios.' using errcode = '40001';
@@ -82,7 +95,8 @@ begin
       meta_id = nullif(p ->> 'meta_id', '')::uuid,
       robot = p ->> 'robot',
       fecha_limite = nullif(p ->> 'fecha_limite', '')::timestamptz,
-      herramienta_url = nullif(trim(p ->> 'herramienta_url'), '')
+      herramienta_url = nullif(trim(p ->> 'herramienta_url'), ''),
+      ultimo_guardado = v_guardado
     where id = v_id;
     if not found then raise exception 'No tienes permiso para editar esta tarea.' using errcode = '42501'; end if;
   end if;

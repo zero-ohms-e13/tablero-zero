@@ -48,6 +48,8 @@ export default function TareaForm() {
     }
   }, [id, detalle.data, misAreasGestion, f, params]);
 
+  // FUN-002: un token por versión del formulario; si se reintenta sin cambiar nada, es el mismo guardado
+  const guardado = useMemo(() => (f ? nuevoId() : undefined), [f]);
   const carga = useMemo(() => cargaPorPersona(tareas.filter((t) => t.id !== id)), [tareas, id]);
   const integrantes = useMemo(() => {
     if (!f) return [];
@@ -78,9 +80,9 @@ export default function TareaForm() {
     if (f.responsables.length === 0) return setError('Elige al menos a una persona responsable.');
     setError(null);
     try {
-      const nuevoId = await guardar.mutateAsync(f);
+      const idGuardado = await guardar.mutateAsync({ ...f, guardado });
       toast({ titulo: id ? 'Cambios guardados.' : 'Tarea asignada.', texto: id ? undefined : 'Ya aparece en su tablero.' });
-      nav(`/tarea/${nuevoId}`, { replace: true });
+      nav(`/tarea/${idGuardado}`, { replace: true });
     } catch (err) {
       setError((err as Error).message);
     }

@@ -209,6 +209,8 @@ export type TareaForm = {
   nuevo_id?: string;
   /** Edición: actualizada_at que vio el formulario (detecta cambios concurrentes). */
   version?: string;
+  /** Token de este intento de guardado: igual en reintentos con los mismos datos (respuesta perdida). */
+  guardado?: string;
   titulo: string;
   para_que_sirve: string;
   area_id: string;
@@ -234,6 +236,7 @@ export function useGuardarTarea() {
         id,
         nueva: !f.id,
         version: f.version ?? null,
+        guardado: f.guardado ?? null,
         titulo: f.titulo.trim(), para_que_sirve: f.para_que_sirve.trim(), area_id: f.area_id, meta_id: f.meta_id,
         robot: f.robot, fecha_limite: f.fecha_limite, herramienta_url: f.herramienta_url?.trim() || null,
         responsables: f.responsables,

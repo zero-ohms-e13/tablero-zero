@@ -115,6 +115,27 @@ describe('FUN-002 · guardar_tarea', () => {
       version = r.version;
     });
 
+    it('edición confirmada cuya respuesta se perdió: el reintento con el mismo token se reconoce, sin conflicto ni avisos repetidos', async () => {
+      const token = '00000000-0000-4000-8000-00000000a0a0';
+      const p = base({ nueva: false, version, guardado: token, titulo: 'Cambio de Marco', responsables: [U.ana, U.diego], pasos: [{ id: P1, texto: 'Conectar' }] });
+      const avisosAntes = await cuenta(`select 1 from public.avisos where tarea_id = '${NUEVA}'`);
+      const histAntes = await cuenta(`select 1 from public.historial where tarea_id = '${NUEVA}'`);
+      const r1 = await guardar(U.marco, p); // se aplicó, pero "la respuesta se perdió"
+      const avisosTras = await cuenta(`select 1 from public.avisos where tarea_id = '${NUEVA}'`);
+      expect(avisosTras).toBe(avisosAntes + 1); // Diego fue asignado de nuevo
+      const histTras = await cuenta(`select 1 from public.historial where tarea_id = '${NUEVA}'`);
+      expect(histTras).toBeGreaterThan(histAntes);
+      const r2 = await guardar(U.marco, p); // mismo token, versión vieja
+      expect(r2).toMatchObject({ id: NUEVA, repetido: true, version: r1.version });
+      expect(await cuenta(`select 1 from public.avisos where tarea_id = '${NUEVA}'`)).toBe(avisosTras);
+      expect(await cuenta(`select 1 from public.historial where tarea_id = '${NUEVA}'`)).toBe(histTras);
+      // con otro token y la versión vieja sí es conflicto
+      expect(await falla(U.marco, { ...p, guardado: '00000000-0000-4000-8000-00000000a0a1' })).toMatch(/conflicto/);
+      // el token no sirve para que alguien sin permiso "confirme" la edición
+      expect(await falla(U.ana, p)).toMatch(/líder o el coach|no puedes editarla|row-level/);
+      version = r1.version;
+    });
+
     it('sin versión no se puede editar (evita sobrescrituras silenciosas)', async () => {
       expect(await falla(U.marco, base({ nueva: false, version: null }))).toMatch(/conflicto/);
     });
