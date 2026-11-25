@@ -205,16 +205,29 @@ export function Sheet({ abierto, onCerrar, titulo, children }: { abierto: boolea
       previo?.focus();
     };
   }, [abierto, onCerrar]);
-  if (!abierto) return null;
+  // Se queda montado un momento al cerrar para que la hoja baje en lugar de desaparecer de golpe.
+  const [montado, setMontado] = useState(abierto);
+  useEffect(() => {
+    if (abierto) {
+      setMontado(true);
+      return;
+    }
+    const t = setTimeout(() => setMontado(false), 220);
+    return () => clearTimeout(t);
+  }, [abierto]);
+  if (!abierto && !montado) return null;
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-tinta/40 sm:items-center" onClick={onCerrar}>
+    <div
+      className={`fixed inset-0 z-40 flex items-end justify-center bg-tinta/40 sm:items-center ${abierto ? 'fondo-entra' : 'fondo-sale pointer-events-none'}`}
+      onClick={onCerrar}
+    >
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-label={titulo}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[90vh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-white p-[18px] shadow-[0_-6px_24px_rgba(89,2,2,.15)] sm:rounded-[22px]"
+        className={`flex max-h-[90vh] w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-white p-[18px] shadow-[0_-6px_24px_rgba(89,2,2,.15)] sm:rounded-[22px] ${abierto ? 'hoja-entra' : 'hoja-sale'}`}
         style={{ paddingBottom: 'max(18px, env(safe-area-inset-bottom))' }}
       >
         <span aria-hidden="true" className="h-1 w-10 self-center rounded-sm bg-linea-campo" />

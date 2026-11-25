@@ -1,5 +1,5 @@
 // Menú lateral del coach y columnas del kanban (solo lectura en Fase 1).
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink } from 'react-router-dom';
 import { Icon } from './Icon';
@@ -10,10 +10,31 @@ import { useSesion } from '../lib/sesion';
 import { supabase } from '../lib/supabase';
 import type { Perfil, Tarea } from '../lib/tipos';
 
+/** true por debajo de 768 px (el breakpoint md de Tailwind). */
+function useEsMovil() {
+  const consulta = '(max-width: 767.98px)';
+  const [movil, setMovil] = useState(() => typeof window !== 'undefined' && window.matchMedia(consulta).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(consulta);
+    const cambio = () => setMovil(mq.matches);
+    mq.addEventListener('change', cambio);
+    return () => mq.removeEventListener('change', cambio);
+  }, []);
+  return movil;
+}
+
 export function SidebarCoach() {
   const { perfil, salir } = useSesion();
   const [editar, setEditar] = useState(false);
   const [menu, setMenu] = useState(false); // solo en celular
+  const esMovil = useEsMovil();
+  // Escape cierra el menú abierto
+  useEffect(() => {
+    if (!menu) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(false);
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [menu]);
   const { data: sinLeer = 0 } = useQuery({
     queryKey: ['avisos_sin_leer'],
     queryFn: async () => (await supabase.from('avisos').select('id', { count: 'exact', head: true }).eq('leido', false)).count ?? 0,
@@ -45,14 +66,24 @@ export function SidebarCoach() {
           onClick={() => setMenu((m) => !m)}
           aria-expanded={menu}
           aria-controls="menu-coach"
-          className="relative flex h-11 shrink-0 items-center gap-2 rounded-campo border border-crema/35 bg-transparent px-3 text-sm text-crema md:hidden"
+          className={`relative flex h-11 shrink-0 items-center gap-2 rounded-campo border px-3 text-sm text-crema transition-colors duration-200 active:scale-95 md:hidden ${menu ? 'border-crema/60 bg-crema/10' : 'border-crema/35 bg-transparent'}`}
         >
-          <Icon name={menu ? 'cerrar' : 'tablero'} size={18} /> Menú
+          <span className="relative h-[18px] w-[18px]" aria-hidden="true">
+            <span className={`absolute inset-0 transition-[opacity,transform] duration-300 ${menu ? 'rotate-90 scale-50 opacity-0' : 'opacity-100'}`}><Icon name="tablero" size={18} /></span>
+            <span className={`absolute inset-0 transition-[opacity,transform] duration-300 ${menu ? 'opacity-100' : '-rotate-90 scale-50 opacity-0'}`}><Icon name="cerrar" size={18} /></span>
+          </span>
+          Menú
           {sinLeer > 0 && !menu && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-ambar"><span className="sr-only">, hay avisos sin leer</span></span>}
         </button>
       </div>
-      <div id="menu-coach" className={`${menu ? 'flex' : 'hidden'} mt-4 flex-col gap-1 md:mt-0 md:flex md:flex-grow`}>
-      <nav aria-label="Coach" className="flex flex-col gap-1">
+      {/* Celular: el menú se despliega con altura animada (0fr → 1fr); en pantalla ancha siempre está abierto. */}
+      <div
+        id="menu-coach"
+        inert={esMovil && !menu}
+        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(.22,1,.36,1)] md:flex md:flex-grow md:opacity-100 md:transition-none ${menu ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
+      >
+      <div className={`flex min-h-0 flex-col gap-1 overflow-hidden transition-transform duration-300 ease-[cubic-bezier(.22,1,.36,1)] md:flex-grow md:translate-y-0 md:overflow-visible md:transition-none ${menu ? 'translate-y-0' : '-translate-y-2'}`}>
+      <nav aria-label="Coach" className="flex flex-col gap-1 pt-4 md:pt-0">
         {item('/coach', 'Panel', true)}
         {item('/coach/area', 'Tableros por área')}
         {item('/coach/metas', 'Metas y competencias')}
@@ -69,6 +100,7 @@ export function SidebarCoach() {
         <button onClick={salir} className="flex min-h-tap items-center gap-2 rounded-[10px] bg-transparent px-3.5 text-left text-[13px] text-crema hover:bg-crema/10">
           <Icon name="salir" size={16} /> Cerrar sesión
         </button>
+      </div>
       </div>
       </div>
       {perfil && <EditarNombre perfil={perfil} abierto={editar} onCerrar={() => setEditar(false)} />}

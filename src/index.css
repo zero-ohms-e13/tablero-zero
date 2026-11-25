@@ -17,9 +17,36 @@
 @keyframes rayo { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 .seg { animation: seg-fill .5s ease-out both; }
 .rayo { animation: rayo 1.4s ease-in-out infinite; }
+
+/* ---------- Transiciones ---------- */
+/* Curva "salida suave": arranca rápido y frena al llegar, se siente fluido al tacto. */
+:root { --suave: cubic-bezier(.22, 1, .36, 1); }
+@keyframes entrada { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fondo-entra { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fondo-sale { from { opacity: 1; } to { opacity: 0; } }
+@keyframes hoja-entra { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes hoja-sale { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes dialogo-entra { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes dialogo-sale { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.96); } }
+@keyframes aterriza { 0% { transform: scale(1.04); } 100% { transform: none; } }
+/* Páginas: aparecen con un leve deslizamiento (la animación termina en transform: none). */
+main { animation: entrada .32s var(--suave) both; }
+.fondo-entra { animation: fondo-entra .22s ease-out both; }
+.fondo-sale { animation: fondo-sale .2s ease-in both; }
+.hoja-entra { animation: hoja-entra .34s var(--suave) both; }
+.hoja-sale { animation: hoja-sale .22s ease-in both; }
+@media (min-width: 640px) {
+  .hoja-entra { animation-name: dialogo-entra; animation-duration: .24s; }
+  .hoja-sale { animation-name: dialogo-sale; }
+}
+.aterriza { animation: aterriza .28s var(--suave); }
+/* Carriles con desplazamiento lateral: sin barra visible en celular */
+.sin-barra { scrollbar-width: none; }
+.sin-barra::-webkit-scrollbar { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
-  .seg, .rayo { animation: none !important; }
-  * { transition: none !important; }
+  .seg, .rayo, main, .fondo-entra, .fondo-sale, .hoja-entra, .hoja-sale, .aterriza { animation: none !important; }
+  * { transition: none !important; scroll-behavior: auto !important; }
 }
 
 /* Imprimir: solo las fichas (hoja carta, 4 por hoja) */
