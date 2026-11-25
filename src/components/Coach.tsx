@@ -86,6 +86,7 @@ export function SidebarCoach() {
       <nav aria-label="Coach" className="flex flex-col gap-1 pt-4 md:pt-0">
         {item('/coach', 'Panel', true)}
         {item('/coach/area', 'Tableros por área')}
+        {item('/coach/bitacoras', 'Bitácoras')}
         {item('/materiales', 'Materiales del equipo')}
         {item('/coach/metas', 'Metas y competencias')}
         {item('/coach/cuentas', 'Cuentas y fichas de tutor')}
