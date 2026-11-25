@@ -59,6 +59,18 @@ describe('SEG-003 · caché aislada por usuario', () => {
     expect(ls.getItem(PREFIJO + 'B') ?? '').not.toContain('avisos-de-A');
   });
 
+  it('un guardado pendiente de A (throttle) no recrea su copia después de cerrar sesión ni al entrar B', async () => {
+    await activarCacheDe(qc, 'A');
+    qc.setQueryData(['tareas'], 'tareas-de-A');
+    await espera(250);
+    qc.setQueryData(['tareas'], 'tareas-de-A-v2'); // deja un guardado pendiente
+    await cerrarCache(qc);
+    await activarCacheDe(qc, 'B');
+    await espera(500);
+    expect(ls.getItem(PREFIJO + 'A')).toBeNull();
+    expect(ls.getItem(PREFIJO + 'B') ?? '').not.toContain('tareas-de-A');
+  });
+
   it('no se hidrata la copia de otro usuario: al entrar B se borra la de A', async () => {
     ls.setItem(PREFIJO + 'A', JSON.stringify({ buster: 'v2', timestamp: Date.now(), clientState: { queries: [], mutations: [] } }));
     await activarCacheDe(qc, 'B');
