@@ -44,6 +44,19 @@ function dia(offsetDesdeHoy: number, hora = 18) {
 }
 
 async function main() {
+  // Protección: el seed BORRA todas las tareas y metas. Solo para pruebas, nunca con el equipo real.
+  if (!process.argv.includes('--solo-pruebas')) {
+    console.error('El seed borra TODAS las tareas y metas. Úsalo solo en una base de pruebas: npm run seed -- --solo-pruebas');
+    process.exit(1);
+  }
+  const { data: existentes } = await srv.from('profiles').select('usuario');
+  const demo = new Set(CUENTAS.map((c) => c.usuario));
+  const reales = (existentes ?? []).filter((p) => !demo.has(p.usuario));
+  if (reales.length) {
+    console.error(`No corro el seed: hay ${reales.length} cuentas que no son de prueba (por ejemplo ${reales[0].usuario}). Borraría sus tareas.`);
+    process.exit(1);
+  }
+
   console.log('Borrando cuentas demo anteriores…');
   const { data: lista } = await srv.auth.admin.listUsers({ perPage: 1000 });
   const demo = new Set(CUENTAS.map((c) => correo(c.usuario)));

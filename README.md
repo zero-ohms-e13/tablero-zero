@@ -107,8 +107,10 @@ npx supabase secrets set ORIGENES_PERMITIDOS=https://tu-app.vercel.app
 ## 5. Datos de ejemplo (seed)
 
 ```powershell
-npm run seed
+npm run seed -- --solo-pruebas
 ```
+
+> **Cuidado:** el seed borra todas las tareas y metas. Se niega a correr si ya hay cuentas reales. Con el equipo real usa `npx tsx scripts/limpiar-demo.ts --si-borrar` solo si quieres volver a empezar (conserva al coach, áreas y competencias). `npm run verificar` necesita las cuentas demo, así que solo funciona en una base de pruebas.
 
 El seed crea:
 - 1 coach y 1 mentora.
