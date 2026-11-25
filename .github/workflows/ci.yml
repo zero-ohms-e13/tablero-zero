@@ -1,0 +1,35 @@
+# QA-001 · Integración continua sin secretos de producción.
+# Instala desde cero, revisa lint, corre las pruebas (Vitest + PGlite: RLS, SQL y lógica de funciones)
+# y compila. No despliega ni toca Supabase.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [master]   # master lo despliega Vercel; aquí solo validamos ramas y PR
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Valores ficticios: el build no se conecta a nada.
+      VITE_SUPABASE_URL: https://ejemplo.supabase.co
+      VITE_SUPABASE_ANON_KEY: clave-ficticia-de-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

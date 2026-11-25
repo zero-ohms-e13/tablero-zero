@@ -93,10 +93,12 @@ insert into tarea_responsables values
 insert into tarea_pasos (tarea_id, orden, texto) values ('${T.odometria}',1,'Medir ruedas'), ('${T.garra}',1,'Probar límite');
 `;
 
-export async function crearBase() {
-  const db = new PGlite();
-  await db.exec(STUB);
-  for (const f of readdirSync(MIGRACIONES).filter((f) => f.endsWith('.sql') && !f.includes('solo_supabase')).sort()) {
+export function migraciones() {
+  return readdirSync(MIGRACIONES).filter((f) => f.endsWith('.sql') && !f.includes('solo_supabase')).sort();
+}
+
+export async function aplicar(db: PGlite, archivos: string[]) {
+  for (const f of archivos) {
     const sql = readFileSync(join(MIGRACIONES, f), 'utf8').replace(/create extension if not exists pgcrypto;/g, '');
     try {
       await db.exec(sql);
@@ -104,8 +106,23 @@ export async function crearBase() {
       throw new Error(`Migración ${f} falló: ${(e as Error).message}`);
     }
   }
+}
+
+/** Base con todas las migraciones. Con `antesDe`, siembra sobre el esquema ANTERIOR a esa migración,
+ *  ejecuta `entre` (datos sintéticos del esquema viejo) y luego aplica el resto (prueba de actualización). */
+export async function crearBase(op: { antesDe?: string; entre?: (db: PGlite) => Promise<void> } = {}) {
+  const db = new PGlite();
+  await db.exec(STUB);
+  const todas = migraciones();
+  const corte = op.antesDe ? todas.findIndex((f) => f >= op.antesDe!) : -1;
+  const viejas = corte >= 0 ? todas.slice(0, corte) : todas;
+  await aplicar(db, viejas);
   await db.exec(GRANTS);
   await db.exec(SEED);
+  if (corte >= 0) {
+    await op.entre?.(db);
+    await aplicar(db, todas.slice(corte));
+  }
 
   // Ejecuta SQL como un usuario (o anónimo si id = null), igual que PostgREST.
   // Cada llamada va en su propia transacción, como una petición de PostgREST.
