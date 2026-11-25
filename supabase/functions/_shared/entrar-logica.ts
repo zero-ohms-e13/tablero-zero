@@ -10,9 +10,13 @@ export type ResultadoAuth =
 
 export type Perfil = { activo: boolean; debe_cambiar_password: boolean; password_temporal_vence: string | null } | null;
 
+export type Reserva = { permitido: boolean; hasta: string | null };
+
 export type Deps = {
-  bloqueadoHasta(usuario: string, ip: string): Promise<string | null>;
-  registrarFallo(usuario: string, ip: string): Promise<string | null>;
+  /** Admisión atómica antes de Auth: reserva el intento o lo rechaza si hay bloqueo vigente. */
+  reservar(usuario: string, ip: string): Promise<Reserva>;
+  /** Devuelve la reserva (error de infraestructura: no cuenta como contraseña incorrecta). */
+  liberar(usuario: string, ip: string): Promise<void>;
   accesoCorrecto(usuario: string, ip: string): Promise<void>;
   autenticar(usuario: string, password: string): Promise<ResultadoAuth>;
   perfil(userId: string): Promise<Perfil>;
@@ -38,27 +42,28 @@ export async function procesarEntrada(entrada: { usuario?: unknown; password?: u
     return { status: 401, body: { codigo: 'incorrecta' } };
   }
 
-  // 1) Límite por intentos (par usuario+origen, origen, y tope global del usuario)
-  let hasta: string | null;
+  // 1) Admisión atómica (par usuario+origen, origen verificado y tope global del usuario)
+  let reserva: Reserva;
   try {
-    hasta = await deps.bloqueadoHasta(usuario, ip);
+    reserva = await deps.reservar(usuario, ip);
   } catch {
     return { status: 503, body: { codigo: 'servicio' } };
   }
-  if (hasta) return { status: 423, body: { codigo: 'bloqueada', hasta } };
+  if (!reserva.permitido) return { status: 423, body: { codigo: 'bloqueada', hasta: reserva.hasta } };
 
   // 2) Autenticación
   const auth = await deps.autenticar(usuario, password).catch((): ResultadoAuth => ({ tipo: 'infra' }));
-  if (auth.tipo === 'infra') return { status: 503, body: { codigo: 'servicio' } };
-  if (auth.tipo === 'credenciales') {
-    let nuevo: string | null = null;
-    try {
-      nuevo = await deps.registrarFallo(usuario, ip);
-    } catch {
-      /* si no se pudo contar, igual respondemos credenciales incorrectas */
-    }
-    return nuevo ? { status: 423, body: { codigo: 'bloqueada', hasta: nuevo } } : { status: 401, body: { codigo: 'incorrecta' } };
+  if (auth.tipo === 'infra') {
+    await deps.liberar(usuario, ip).catch(() => {});
+    return { status: 503, body: { codigo: 'servicio' } };
   }
+  if (auth.tipo === 'credenciales') {
+    // El intento ya quedó contado en la reserva; si llegó al límite, el bloqueo queda confirmado
+    return reserva.hasta ? { status: 423, body: { codigo: 'bloqueada', hasta: reserva.hasta } } : { status: 401, body: { codigo: 'incorrecta' } };
+  }
+
+  // La contraseña fue correcta: el contador de este origen se limpia aunque la cuenta no pueda entrar
+  await deps.accesoCorrecto(usuario, ip).catch(() => {});
 
   // 3) Reglas de cuenta: inactiva y contraseña temporal vencida (se cierra la sesión recién creada)
   const p = await deps.perfil(auth.userId).catch(() => undefined);
@@ -75,6 +80,5 @@ export async function procesarEntrada(entrada: { usuario?: unknown; password?: u
     return { status: 403, body: { codigo: 'temporal_vencida' } };
   }
 
-  await deps.accesoCorrecto(usuario, ip).catch(() => {});
   return { status: 200, body: { access_token: auth.access_token, refresh_token: auth.refresh_token } };
 }

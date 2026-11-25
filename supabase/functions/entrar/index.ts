@@ -1,6 +1,6 @@
 // POST /functions/v1/entrar  { usuario, password }
 // Inicio de sesión con usuario (sin correo). La lógica vive en _shared/entrar-logica.ts (probada con Vitest).
-// SEG-004: limitación por usuario+origen, por origen y tope global por usuario, con contadores atómicos en SQL;
+// SEG-004: limitación por usuario+origen, por origen y tope global por usuario, con admisión atómica en SQL antes de Auth;
 // sin bloqueo global previo. Cuenta inactiva y temporal vencida se conservan.
 import { clienteAnonimo, clienteServicio, correoDe, cors, json } from '../_shared/comun.ts';
 import { ipCliente, procesarEntrada, type Deps } from '../_shared/entrar-logica.ts';
@@ -24,8 +24,10 @@ Deno.serve(async (req) => {
   };
 
   const deps: Deps = {
-    bloqueadoHasta: (u, ip) => rpc('acceso_bloqueado', { p_usuario: u, p_ip: ip }),
-    registrarFallo: (u, ip) => rpc('registrar_fallo_acceso', { p_usuario: u, p_ip: ip }),
+    reservar: (u, ip) => rpc('reservar_intento', { p_usuario: u, p_ip: ip }),
+    liberar: async (u, ip) => {
+      await rpc('liberar_intento', { p_usuario: u, p_ip: ip });
+    },
     accesoCorrecto: async (u, ip) => {
       await rpc('acceso_correcto', { p_usuario: u, p_ip: ip });
     },
