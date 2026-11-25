@@ -5,7 +5,8 @@
 --
 -- Ahora (con las revisiones de ChatGPT en los puntos de control 0 y 1):
 --  * Admisión atómica antes de Auth: cada intento crea una RESERVA con identidad y vencimiento;
---    se liquida una sola vez (idempotente) como 'fallo', 'correcto' o 'infra'.
+--    se liquida una sola vez (idempotente) como 'fallo', 'correcto' o 'infra'. Una reserva que vence
+--    sin liquidar se devuelve (no cuenta como contraseña incorrecta).
 --  * Solo NIEGA el contador del par usuario+origen verificado:
 --      'ui:<usuario>|<ip>'  5 intentos / 15 min → 10 min.
 --  * Los contadores por origen y por usuario son SEÑALES DE ALERTA (no niegan acceso):
@@ -162,13 +163,18 @@ language sql stable security definer set search_path = '' as $$
   where alerta_desde is not null and ventana_inicio >= now() - interval '15 minutes'
 $$;
 
--- Limpieza: contadores viejos y reservas vencidas (una reserva sin liquidar queda contada como fallo).
+-- Limpieza: contadores viejos y reservas vencidas. Una reserva sin liquidar (se perdió la respuesta de
+-- Auth) NO demuestra una contraseña incorrecta: al vencer se devuelve, igual que un error de infraestructura.
 create or replace function public.purgar_intentos() returns void
-language sql security definer set search_path = '' as $$
+language plpgsql security definer set search_path = '' as $$
+declare r uuid;
+begin
+  for r in select id from public.intentos_reservas where creada < now() - interval '5 minutes' loop
+    perform public.liquidar_intento(r, 'infra');
+  end loop;
   delete from public.intentos_acceso
   where ventana_inicio < now() - interval '1 day' and (bloqueado_hasta is null or bloqueado_hasta < now());
-  delete from public.intentos_reservas where creada < now() - interval '2 minutes';
-$$;
+end $$;
 
 do $$
 declare f text;

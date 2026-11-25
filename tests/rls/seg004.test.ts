@@ -99,12 +99,14 @@ describe('SEG-004 · limitación de intentos', () => {
     expect(await contador('ui:tardio.q|10.3.3.3')).toBe(2);
   });
 
-  it('una reserva vencida sin liquidar queda contada como fallo y se purga', async () => {
+  it('una reserva vencida sin liquidar (respuesta de Auth perdida) devuelve su capacidad y se purga', async () => {
+    await fallo('perdida.w', '10.4.4.4');
     const r = await reservar('perdida.w', '10.4.4.4');
-    await b.comoServicio(`update public.intentos_reservas set creada = now() - interval '3 minutes' where id = '${r.reserva}'`);
+    expect(await contador('ui:perdida.w|10.4.4.4')).toBe(2);
+    await b.comoServicio(`update public.intentos_reservas set creada = now() - interval '6 minutes' where id = '${r.reserva}'`);
     await b.comoServicio(`select public.purgar_intentos()`);
-    expect(await liquidar(r, 'infra')).toBe(false);
-    expect(await contador('ui:perdida.w|10.4.4.4')).toBe(1);
+    expect(await liquidar(r, 'infra')).toBe(false); // ya no existe
+    expect(await contador('ui:perdida.w|10.4.4.4')).toBe(1); // solo queda el fallo real
   });
 
   it('la ventana expira y el contador vuelve a empezar; un bloqueo vigente se respeta hasta vencer', async () => {
