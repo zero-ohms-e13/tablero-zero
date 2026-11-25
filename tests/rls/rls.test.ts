@@ -143,7 +143,9 @@ describe('Cuentas y coach', () => {
 
   it('un anónimo solo puede pedir reinicio, no leer datos', async () => {
     await como(null, `select solicitar_reinicio('ana.l')`);
-    expect(await falla(null, 'select id from tareas')).toMatch(/permission denied/);
+    // Con los privilegios por defecto de Supabase, la RLS devuelve 0 filas al anónimo
+    expect(await como(null, 'select id from tareas')).toHaveLength(0);
+    expect(await como(null, 'select id from profiles')).toHaveLength(0);
     expect(await como(U.coach, 'select usuario from solicitudes_reinicio')).toEqual([{ usuario: 'ana.l' }]);
     expect(await como(U.ana, 'select usuario from solicitudes_reinicio')).toHaveLength(0);
   });
@@ -207,5 +209,43 @@ describe('Fase 2 y 3', () => {
 
   it('el recordatorio diario no se puede llamar desde el navegador', async () => {
     expect(await falla(U.coach, `select recordar_vencen_hoy()`)).toMatch(/permission denied/);
+  });
+});
+
+describe('SEG-001 · felicitaciones solo por la RPC', () => {
+  it('nadie escribe directo en felicitaciones (ni sobre su propia tarea)', async () => {
+    // T.garra está hecha y es de Ana: antes la política fel_insert permitía auto-felicitarse sin la RPC
+    expect(await falla(U.ana, `insert into felicitaciones (tarea_id, usuario_id) values ('${T.garra}', '${U.ana}')`)).not.toBeNull();
+    expect(await falla(U.marco, `insert into felicitaciones (tarea_id, usuario_id) values ('${T.garra}', '${U.marco}')`)).not.toBeNull();
+    expect(await falla(U.tutorAna, `insert into felicitaciones (tarea_id, usuario_id) values ('${T.garra}', '${U.tutorAna}')`)).not.toBeNull();
+    expect(await falla(null, `insert into felicitaciones (tarea_id, usuario_id) values ('${T.garra}', '${U.ana}')`)).not.toBeNull();
+  });
+
+  it('una tarea sin terminar no se felicita', async () => {
+    expect(await falla(U.coach, `select felicitar('${T.pits}')`)).toMatch(/terminadas/);
+  });
+
+  it('co-responsables de una tarea compartida no se felicitan', async () => {
+    expect(await falla(U.diego, `select felicitar('${T.odometria}')`)).toMatch(/ti mismo/);
+    expect(await falla(U.ana, `select felicitar('${T.odometria}')`)).toMatch(/ti mismo/);
+  });
+
+  it('tutores y anónimos no felicitan por la RPC', async () => {
+    expect(await falla(U.tutorAna, `select felicitar('${T.garra}')`)).not.toBeNull();
+    expect(await falla(null, `select felicitar('${T.garra}')`)).not.toBeNull();
+  });
+
+  it('un integrante elegible felicita, se avisa una vez y puede retirarla', async () => {
+    const antes = (await como(U.ana, `select id from avisos where tipo = 'felicitacion' and tarea_id = '${T.garra}'`)).length;
+    const [r] = await como<{ felicitar: boolean }>(U.marco, `select felicitar('${T.garra}')`);
+    expect(r.felicitar).toBe(true);
+    expect(await como(U.marco, `select tarea_id from felicitaciones where tarea_id = '${T.garra}'`)).toHaveLength(1);
+    expect((await como(U.ana, `select id from avisos where tipo = 'felicitacion' and tarea_id = '${T.garra}'`)).length).toBe(antes + 1);
+    // Retirar por borrado directo no se permite; por la RPC sí
+    await como(U.marco, `delete from felicitaciones where tarea_id = '${T.garra}'`).catch(() => {});
+    expect(await como(U.marco, `select tarea_id from felicitaciones where tarea_id = '${T.garra}'`)).toHaveLength(1);
+    const [r2] = await como<{ felicitar: boolean }>(U.marco, `select felicitar('${T.garra}')`);
+    expect(r2.felicitar).toBe(false);
+    expect(await como(U.marco, `select tarea_id from felicitaciones where tarea_id = '${T.garra}'`)).toHaveLength(0);
   });
 });
