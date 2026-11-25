@@ -45,4 +45,14 @@ describe('QA-001 · migraciones', () => {
       expect(sql, f).not.toMatch(/drop\s+table|drop\s+column|truncate|delete\s+from\s+public\.(tareas|profiles|felicitaciones|membresias)/);
     }
   });
+
+  it('ninguna función lanza errores de serialización (40001/40P01): PostgREST los reintenta y la llamada se cuelga', async () => {
+    // PGlite no reintenta, así que este fallo solo se ve en Supabase real (verificado en el proyecto de pruebas).
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    for (const f of migraciones()) {
+      const sql = readFileSync(join(process.cwd(), 'supabase', 'migrations', f), 'utf8');
+      expect(sql, f).not.toMatch(/errcode\s*=\s*'(40001|40P01)'/i);
+    }
+  });
 });

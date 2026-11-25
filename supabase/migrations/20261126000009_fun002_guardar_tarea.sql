@@ -17,7 +17,8 @@
 --     "pasos": [{ "id": uuid, "texto": text }] }  -- ids generados por el cliente para pasos nuevos
 -- Salida: { "id": uuid, "version": timestamptz }
 --
--- Concurrencia: si la tarea cambió desde que se abrió el formulario → error 'conflicto' (40001).
+-- Concurrencia: si la tarea cambió desde que se abrió el formulario → error 'conflicto' (PT409 → HTTP 409). No usar 40001: PostgREST reintenta
+-- las fallas de serialización y la llamada se queda colgada (verificado en el proyecto de pruebas).
 -- Reintento de un alta cuya respuesta se perdió: misma id + mismo autor → se aplica como edición
 -- idempotente (no duplica tarea, responsables, pasos ni avisos).
 -- Reintento de una EDICIÓN confirmada cuya respuesta se perdió: mismo token 'guardado' que el último
@@ -73,7 +74,7 @@ begin
             nullif(trim(p ->> 'herramienta_url'), ''), auth.uid(), v_guardado);
   else
     if v_nueva and t.creada_por is distinct from auth.uid() then
-      raise exception 'conflicto: ese identificador ya existe.' using errcode = '40001';
+      raise exception 'conflicto: ese identificador ya existe.' using errcode = 'PT409';
     end if;
     if v_guardado is not null and t.ultimo_guardado = v_guardado then
       if not public.puede_gestionar_tarea(v_id) then
@@ -82,7 +83,7 @@ begin
       return jsonb_build_object('id', v_id, 'version', t.actualizada_at, 'repetido', true);
     end if;
     if not v_nueva and (v_version is null or t.actualizada_at <> v_version) then
-      raise exception 'conflicto: alguien más cambió esta tarea. Recarga para ver los cambios.' using errcode = '40001';
+      raise exception 'conflicto: alguien más cambió esta tarea. Recarga para ver los cambios.' using errcode = 'PT409';
     end if;
     if not public.puede_gestionar_tarea(v_id) then
       raise exception 'Solo tu líder o el coach pueden editar esta tarea.' using errcode = '42501';
