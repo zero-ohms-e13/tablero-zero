@@ -1,59 +1,79 @@
 // POST /functions/v1/admin-accounts  (Authorization: Bearer <sesión del coach>)
 // Única puerta para crear cuentas, reiniciar contraseñas y borrar datos.
 // Acciones: crear | reiniciar | estado | borrar
-import {
-  clienteServicio, correoDe, cors, inicialesDe, json, passwordTemporal, usuarioDesdeNombre, USUARIO_RE,
-} from '../_shared/comun.ts';
+import { clienteServicio, correoDe, cors, json, passwordTemporal } from '../_shared/comun.ts';
+import { procesarAlta, type Deps } from '../_shared/alta-logica.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.50.0';
 
 const VIGENCIA_DIAS = 7;
-const COLORES = ['#2F5D8A', '#7A3E06', '#2E5A36', '#8A3B6B', '#590202', '#5A4335'];
+const BLOQUEO = '876000h';
 
-type Membresia = { area_id: string; es_lider?: boolean };
 type Ficha = { usuario_id: string; usuario: string; password: string; nombre: string; rol: string; vence: string; tutor_de?: string };
 
 const vence = () => new Date(Date.now() + VIGENCIA_DIAS * 86_400_000).toISOString();
 
-async function usuarioLibre(srv: SupabaseClient, base: string): Promise<string> {
-  const limpio = base.toLowerCase().replace(/[^a-z0-9._-]/g, '').replace(/^[._-]+|[._-]+$/g, '') || 'usuario';
-  const { data } = await srv.from('profiles').select('usuario').like('usuario', `${limpio}%`);
-  const usados = new Set((data ?? []).map((r) => r.usuario));
-  if (!usados.has(limpio)) return limpio;
-  for (let i = 2; i < 100; i++) if (!usados.has(`${limpio}${i}`)) return `${limpio}${i}`;
-  throw new Error('No hay usuario libre');
-}
-
-// Acepta la temporal que el coach ve en pantalla solo si sigue el formato palabra-número.
-const TEMPORAL_RE = /^[a-z]{2,10}-\d{3}$/;
-
-async function crearCuenta(
-  srv: SupabaseClient,
-  d: { nombre: string; usuario: string; rol: string; color: string; password?: string },
-): Promise<Ficha> {
-  const password = d.password && TEMPORAL_RE.test(d.password) ? d.password : passwordTemporal();
-  const { data, error } = await srv.auth.admin.createUser({
-    email: correoDe(d.usuario),
-    password,
-    email_confirm: true,
-    user_metadata: {},
-  });
-  if (error || !data.user) throw new Error(error?.message ?? 'No se pudo crear la cuenta');
-  const v = vence();
-  const { error: e2 } = await srv.from('profiles').insert({
-    id: data.user.id,
-    usuario: d.usuario,
-    nombre_visible: d.nombre,
-    iniciales: inicialesDe(d.nombre),
-    color: d.color,
-    rol_global: d.rol,
-    debe_cambiar_password: true,
-    password_temporal_vence: v,
-  });
-  if (e2) {
-    await srv.auth.admin.deleteUser(data.user.id);
-    throw new Error(e2.message);
-  }
-  return { usuario_id: data.user.id, usuario: d.usuario, password, nombre: d.nombre, rol: d.rol, vence: v };
+// FUN-003: dependencias reales de la lógica de alta (alta-logica.ts, probada con Vitest).
+function depsAlta(srv: SupabaseClient): Deps {
+  const rpc = async (fn: string, args: Record<string, unknown>) => {
+    const { data, error } = await srv.rpc(fn, args);
+    if (error) throw error;
+    return data;
+  };
+  return {
+    areasExistentes: async (ids) => {
+      const { data, error } = await srv.from('areas').select('id').in('id', ids);
+      if (error) throw error;
+      return (data ?? []).map((r) => r.id);
+    },
+    esAlumno: async (id) => {
+      const { data, error } = await srv.from('profiles').select('id').eq('id', id).eq('rol_global', 'alumno').maybeSingle();
+      if (error) throw error;
+      return !!data;
+    },
+    usuariosOcupados: async (base) => {
+      const { data, error } = await srv.from('profiles').select('usuario').like('usuario', `${base}%`);
+      if (error) throw error;
+      return (data ?? []).map((r) => r.usuario);
+    },
+    iniciar: (sol, coach, huella) => rpc('iniciar_alta', { p_solicitud: sol, p_coach: coach, p_huella: huella }),
+    registrarCreado: async (sol, id) => {
+      await rpc('registrar_creado_alta', { p_solicitud: sol, p_id: id });
+    },
+    olvidarCreados: async (sol, ids) => {
+      await rpc('olvidar_creados_alta', { p_solicitud: sol, p_ids: ids });
+    },
+    marcar: async (sol, estado, err) => {
+      await rpc('marcar_alta', { p_solicitud: sol, p_estado: estado, p_error: err });
+    },
+    crearIdentidad: async (usuario, password) => {
+      const { data, error } = await srv.auth.admin.createUser({
+        email: correoDe(usuario), password, email_confirm: true, user_metadata: {}, ban_duration: BLOQUEO,
+      });
+      if (!error && data.user) return { ok: true, id: data.user.id };
+      const e = error as { status?: number; code?: string } | null;
+      return { ok: false, existe: e?.status === 422 || e?.code === 'email_exists' || e?.code === 'user_already_exists' };
+    },
+    borrarIdentidad: async (id) => {
+      const { error } = await srv.auth.admin.deleteUser(id);
+      return !error || (error as { status?: number }).status === 404;
+    },
+    completar: async (p) => {
+      await rpc('completar_alta', { p });
+    },
+    activar: async (id) => {
+      const { error } = await srv.auth.admin.updateUserById(id, { ban_duration: 'none' });
+      if (error) throw error;
+    },
+    nuevaPassword: async (id, password, v) => {
+      const { error } = await srv.auth.admin.updateUserById(id, { password });
+      if (error) throw error;
+      const { error: e2 } = await srv.from('profiles').update({ debe_cambiar_password: true, password_temporal_vence: v }).eq('id', id);
+      if (e2) throw e2;
+    },
+    password: passwordTemporal,
+    ahora: () => new Date(),
+    uuid: () => crypto.randomUUID(),
+  };
 }
 
 Deno.serve(async (req) => {
@@ -79,55 +99,12 @@ Deno.serve(async (req) => {
 
   try {
     switch (body.accion) {
-      // Crea alumno (y opcionalmente su tutor) o una cuenta de coach auxiliar / tutor suelto.
+      // Crea alumno (y opcionalmente su tutor), tutor suelto o mentor. FUN-003: validación previa,
+      // escrituras en una transacción, compensación limitada a esta solicitud y reintento idempotente.
       case 'crear': {
-        const nombre = String(body.nombre ?? '').trim().replace(/\s+/g, ' ');
-        const rol = String(body.rol ?? 'alumno');
-        if (nombre.length < 2 || nombre.length > 40) return json(req, { error: 'Escribe un nombre de 2 a 40 letras.' }, 400);
-        if (!['alumno', 'tutor', 'coach_aux'].includes(rol)) return json(req, { error: 'Rol no válido.' }, 400);
-        if (rol === 'coach_aux' && yo.rol_global !== 'coach') return json(req, { error: 'Solo el coach principal crea mentores.' }, 403);
-
-        let usuarioPedido = String(body.usuario ?? '').trim().toLowerCase();
-        if (usuarioPedido && !USUARIO_RE.test(usuarioPedido)) {
-          return json(req, { error: 'El usuario solo lleva minúsculas, números y puntos.' }, 400);
-        }
-        if (!usuarioPedido) usuarioPedido = usuarioDesdeNombre(nombre);
-        if (rol === 'tutor' && !usuarioPedido.startsWith('tutor.')) usuarioPedido = `tutor.${usuarioPedido}`;
-        const usuario = await usuarioLibre(srv, usuarioPedido);
-
-        const membresias = (Array.isArray(body.membresias) ? body.membresias : []) as Membresia[];
-        const color = String(body.color ?? COLORES[Math.floor(Math.random() * COLORES.length)]);
-        const fichas: Ficha[] = [];
-
-        const cuenta = await crearCuenta(srv, { nombre, usuario, rol, color, password: typeof body.password === 'string' ? body.password : undefined });
-        fichas.push(cuenta);
-
-        if (rol === 'alumno' && membresias.length) {
-          const { error } = await srv.from('membresias').insert(
-            membresias.map((m) => ({ usuario_id: cuenta.usuario_id, area_id: m.area_id, es_lider: !!m.es_lider })),
-          );
-          if (error) throw new Error(error.message);
-        }
-
-        // Tutor en el mismo paso
-        if (rol === 'alumno' && body.con_tutor) {
-          const tutorUsuario = await usuarioLibre(srv, `tutor.${usuario}`);
-          const tutor = await crearCuenta(srv, {
-            nombre: `Familia de ${nombre.split(' ')[0]}`,
-            usuario: tutorUsuario,
-            rol: 'tutor',
-            color: '#5A4335',
-          });
-          tutor.tutor_de = nombre;
-          await srv.from('tutores_alumnos').insert({ tutor_id: tutor.usuario_id, alumno_id: cuenta.usuario_id });
-          fichas.push(tutor);
-        }
-
-        // Tutor suelto vinculado a un alumno ya existente
-        if (rol === 'tutor' && typeof body.alumno_id === 'string') {
-          await srv.from('tutores_alumnos').insert({ tutor_id: cuenta.usuario_id, alumno_id: body.alumno_id });
-        }
-        return json(req, { fichas });
+        const r = await procesarAlta(body, { id: yo.id, rol_global: yo.rol_global }, depsAlta(srv));
+        if (r.status >= 500) console.error('alta', r.body.estado ?? '');
+        return json(req, r.body, r.status);
       }
 
       // Reinicia sin mostrar la anterior: genera otra temporal con 7 días de vigencia.
