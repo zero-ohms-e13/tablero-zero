@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { Alerta, Avatar, Boton, Cargando, HeaderVino, Sheet, claseCampo, useToast } from '../components/ui';
-import { cargaPorPersona, useAreas, useGuardarTarea, useMembresias, useMetas, usePerfiles, useTareaDetalle, useTareas, type TareaForm as Form } from '../lib/datos';
+import { cargaPorPersona, nuevoId, useAreas, useGuardarTarea, useMembresias, useMetas, usePerfiles, useTareaDetalle, useTareas, type TareaForm as Form } from '../lib/datos';
 import { aInputLocal, deInputLocal } from '../lib/fechas';
 import { useSesion } from '../lib/sesion';
 import type { Robot } from '../lib/tipos';
@@ -33,7 +33,7 @@ export default function TareaForm() {
       const t = detalle.data?.tarea;
       if (!t) return;
       setF({
-        id: t.id, titulo: t.titulo, para_que_sirve: t.para_que_sirve, area_id: t.area_id, meta_id: t.meta_id, robot: t.robot,
+        id: t.id, version: t.actualizada_at, titulo: t.titulo, para_que_sirve: t.para_que_sirve, area_id: t.area_id, meta_id: t.meta_id, robot: t.robot,
         fecha_limite: t.fecha_limite, herramienta_url: t.herramienta_url, responsables: t.tarea_responsables.map((r) => r.usuario_id),
         pasos: t.tarea_pasos.map((p) => ({ id: p.id, texto: p.texto, hecho: p.hecho })),
       });
@@ -42,12 +42,14 @@ export default function TareaForm() {
       const area = pedida && misAreasGestion.includes(pedida) ? pedida : misAreasGestion[0];
       const pre = params.get('para');
       setF({
-        titulo: '', para_que_sirve: '', area_id: area, meta_id: null, robot: 'VEX', fecha_limite: null, herramienta_url: null,
-        responsables: pre ? [pre] : [], pasos: [{ texto: '' }, { texto: '' }, { texto: '' }],
+        nuevo_id: nuevoId(), titulo: '', para_que_sirve: '', area_id: area, meta_id: null, robot: 'VEX', fecha_limite: null, herramienta_url: null,
+        responsables: pre ? [pre] : [], pasos: [{ id: nuevoId(), texto: '' }, { id: nuevoId(), texto: '' }, { id: nuevoId(), texto: '' }],
       });
     }
   }, [id, detalle.data, misAreasGestion, f, params]);
 
+  // FUN-002: un token por versión del formulario; si se reintenta sin cambiar nada, es el mismo guardado
+  const guardado = useMemo(() => (f ? nuevoId() : undefined), [f]);
   const carga = useMemo(() => cargaPorPersona(tareas.filter((t) => t.id !== id)), [tareas, id]);
   const integrantes = useMemo(() => {
     if (!f) return [];
@@ -78,9 +80,9 @@ export default function TareaForm() {
     if (f.responsables.length === 0) return setError('Elige al menos a una persona responsable.');
     setError(null);
     try {
-      const nuevoId = await guardar.mutateAsync(f);
+      const idGuardado = await guardar.mutateAsync({ ...f, guardado });
       toast({ titulo: id ? 'Cambios guardados.' : 'Tarea asignada.', texto: id ? undefined : 'Ya aparece en su tablero.' });
-      nav(`/tarea/${nuevoId}`, { replace: true });
+      nav(`/tarea/${idGuardado}`, { replace: true });
     } catch (err) {
       setError((err as Error).message);
     }
@@ -192,7 +194,7 @@ export default function TareaForm() {
               )}
             </div>
           ))}
-          <button type="button" onClick={() => set('pasos', [...f.pasos, { texto: '' }])} className="flex h-11 items-center justify-center gap-1.5 rounded-campo border-2 border-dashed border-[#A88F6A] bg-transparent text-sm font-semibold text-vino">
+          <button type="button" onClick={() => set('pasos', [...f.pasos, { id: nuevoId(), texto: '' }])} className="flex h-11 items-center justify-center gap-1.5 rounded-campo border-2 border-dashed border-[#A88F6A] bg-transparent text-sm font-semibold text-vino">
             <Icon name="mas" size={16} /> Agregar paso
           </button>
         </div>

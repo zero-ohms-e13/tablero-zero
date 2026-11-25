@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { EditarNombre, LayoutCoach } from '../components/Coach';
@@ -172,7 +172,7 @@ export default function Cuentas() {
           alumnos={alumnos}
           puedeMentor={esCoachPrincipal}
           onCreada={(f) => {
-            setFichas(f);
+            setFichas(f.length ? f : null);
             recargar();
           }}
         />
@@ -198,6 +198,9 @@ function NuevaCuenta({ areas, alumnos, puedeMentor, onCreada }: {
   const [alumnoId, setAlumnoId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  // FUN-003: id de solicitud estable mientras no cambien los datos; un reintento no duplica cuentas
+  const [solicitud, setSolicitud] = useState(() => crypto.randomUUID());
+  useEffect(() => setSolicitud(crypto.randomUUID()), [nombre, usuario, rol, sel, conTutor, alumnoId]);
   const esAlumno = rol === 'integrante' || rol === 'lider';
   const usuarioFinal = usuarioTocado ? usuario : (rol === 'tutor' ? 'tutor.' : '') + usuarioDesdeNombre(nombre);
 
@@ -209,8 +212,9 @@ function NuevaCuenta({ areas, alumnos, puedeMentor, onCreada }: {
     setError(null);
     setEnviando(true);
     try {
-      const r = await admin({
+      const r = await admin<{ fichas: Ficha[]; ya_creadas?: { usuario: string }[]; mensaje?: string }>({
         accion: 'crear',
+        solicitud_id: solicitud,
         nombre: nombre.trim(),
         usuario: usuarioFinal,
         rol: esAlumno ? 'alumno' : rol,
@@ -220,12 +224,20 @@ function NuevaCuenta({ areas, alumnos, puedeMentor, onCreada }: {
         alumno_id: rol === 'tutor' ? alumnoId : undefined,
         color: esAlumno ? undefined : '#5A4335',
       });
+      if (r.ya_creadas?.length) {
+        // FUN-003: reintento de un alta que ya había terminado; no se cambian contraseñas
+        onCreada([]);
+        setError(`${r.mensaje ?? 'Estas cuentas ya se habían creado.'} (${r.ya_creadas.map((x) => x.usuario).join(', ')})`);
+        setSolicitud(crypto.randomUUID());
+        return;
+      }
       onCreada(r.fichas);
       setNombre('');
       setUsuario('');
       setUsuarioTocado(false);
       setSel([]);
       setPassword(passwordTemporal());
+      setSolicitud(crypto.randomUUID());
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -327,6 +339,7 @@ function Acciones({ perfil, onCerrar, alumnos, tutores, vinculos, puedeBorrar, o
 }) {
   const toast = useToast();
   const [vista, setVista] = useState<'menu' | 'vincular' | 'borrar' | 'nombre'>('menu');
+  const [solTutor] = useState(() => crypto.randomUUID()); // FUN-003: reintento sin duplicar al tutor
   const [elegido, setElegido] = useState('');
   const [error, setError] = useState<string | null>(null);
   const cerrar = () => { setVista('menu'); setElegido(''); setError(null); onCerrar(); };
@@ -359,7 +372,11 @@ function Acciones({ perfil, onCerrar, alumnos, tutores, vinculos, puedeBorrar, o
             <Boton variante="fantasma" onClick={() => setVista('vincular')}><Icon name="enlace" size={18} /> {esAlumno ? 'Vincular tutor' : 'Vincular a otro alumno'}</Boton>
           )}
           {esAlumno && (
-            <Boton variante="fantasma" onClick={() => correr(async () => onFichas((await admin({ accion: 'crear', rol: 'tutor', nombre: `Familia de ${perfil.nombre_visible.split(' ')[0]}`, usuario: `tutor.${perfil.usuario}`, alumno_id: perfil.id })).fichas), 'Cuenta de tutor creada.')}>
+            <Boton variante="fantasma" onClick={() => correr(async () => {
+              const r = await admin<{ fichas: Ficha[]; mensaje?: string }>({ accion: 'crear', solicitud_id: solTutor, rol: 'tutor', nombre: `Familia de ${perfil.nombre_visible.split(' ')[0]}`, usuario: `tutor.${perfil.usuario}`, alumno_id: perfil.id });
+              if (!r.fichas.length) throw new Error(r.mensaje ?? 'Esa cuenta ya se había creado.');
+              onFichas(r.fichas);
+            }, 'Cuenta de tutor creada.')}>
               <Icon name="mas" size={18} /> Crear cuenta de tutor nueva
             </Boton>
           )}

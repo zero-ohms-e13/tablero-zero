@@ -1,11 +1,20 @@
-// Prueba de humo contra el proyecto real: login sin correo, permisos por rol y bloqueo.
-// Uso: npx tsx scripts/verificar.ts   (lee supabase/.env; no imprime llaves ni contraseñas)
+// Prueba de humo contra un proyecto Supabase DE PRUEBAS: login sin correo, permisos por rol y bloqueo.
+// Uso: VERIFICAR_DESTINO=pruebas npx tsx scripts/verificar.ts
+//      (lee supabase/.env; no imprime llaves ni contraseñas; requiere el seed de demo)
 import { createClient } from '@supabase/supabase-js';
 import { config } from 'dotenv';
 
 config({ path: 'supabase/.env' });
 const { SUPABASE_URL: URL_, SUPABASE_ANON_KEY: ANON, SEED_PASSWORD: PASS, SUPABASE_SERVICE_ROLE_KEY: SRV } = process.env as Record<string, string>;
 const INICIO = new Date().toISOString();
+if (process.env.VERIFICAR_DESTINO !== 'pruebas') {
+  console.error('Detenido: confirma que supabase/.env apunta a un proyecto de PRUEBAS con VERIFICAR_DESTINO=pruebas.');
+  process.exit(2);
+}
+
+type TareaArea = { titulo: string; area_id: string; areas: { nombre: string } | null };
+type TareaResp = { id: string; tarea_responsables: { usuario_id: string }[] };
+type Bloqueo = { usuario: string; bloqueado_hasta: string };
 let fallas = 0;
 const ok = (c: boolean, m: string) => {
   console.log(`${c ? 'OK   ' : 'FALLA'} ${m}`);
@@ -38,12 +47,12 @@ async function main() {
 
   // Integrante
   const ana = await como('ana.l');
-  const { data: tAna } = await ana.from('tareas').select('titulo, area_id, areas(nombre)');
-  const areasAna = new Set((tAna ?? []).map((t: any) => t.areas.nombre));
+  const { data: tAna } = await ana.from('tareas').select('titulo, area_id, areas(nombre)').returns<TareaArea[]>();
+  const areasAna = new Set((tAna ?? []).map((t) => t.areas?.nombre));
   ok(tAna!.length > 0 && [...areasAna].every((a) => a === 'Programación' || a === 'Rama femenil'), `ana ve ${tAna!.length} tareas solo de Programación/Rama femenil`);
   const { data: pSof } = await ana.from('profiles').select('id').eq('usuario', 'sofia.r');
   ok(pSof!.length === 0, 'ana no ve a sofía (otra área)');
-  const garra = (tAna ?? []).find((t: any) => t.titulo.startsWith('Clase Garra'));
+  const garra = (tAna ?? []).find((t) => t.titulo.startsWith('Clase Garra'));
   ok(!!garra, 'ana ve su tarea en revisión');
   const { error: eAuto } = await ana.from('tareas').update({ estado: 'hecha' }).eq('titulo', 'Clase Garra con límites');
   ok(!!eAuto, 'ana no puede aprobarse sola');
@@ -63,10 +72,10 @@ async function main() {
 
   // Tutor (primer ingreso pendiente, pero ya puede leer con su sesión)
   const tutor = await como('tutor.ana.l');
-  const { data: tTut } = await tutor.from('tareas').select('id, tarea_responsables(usuario_id)');
+  const { data: tTut } = await tutor.from('tareas').select('id, tarea_responsables(usuario_id)').returns<TareaResp[]>();
   const { data: pTut } = await tutor.from('profiles').select('usuario').eq('rol_global', 'alumno');
   ok(pTut!.map((p) => p.usuario).join() === 'ana.l', `tutor solo ve el perfil de ana (${pTut!.map((p) => p.usuario)})`);
-  ok(tTut!.length > 0 && tTut!.every((t: any) => t.tarea_responsables.length === 1), `tutor ve ${tTut!.length} tareas y solo a ana como responsable`);
+  ok(tTut!.length > 0 && tTut!.every((t) => t.tarea_responsables.length === 1), `tutor ve ${tTut!.length} tareas y solo a ana como responsable`);
   const { data: aa } = await tutor.rpc('avance_areas');
   ok(aa!.length === 4, 'tutor ve avance de las 4 áreas');
 
@@ -80,8 +89,8 @@ async function main() {
     headers: { 'Content-Type': 'application/json', apikey: ANON, Authorization: `Bearer ${s.session!.access_token}` },
     body: JSON.stringify({ accion: 'bloqueos' }),
   });
-  const b = await r.json();
-  ok(r.status === 200 && b.bloqueos.some((x: any) => x.usuario === 'nadie.x'), 'coach ve bloqueos vía admin-accounts');
+  const b = (await r.json()) as { bloqueos: Bloqueo[] };
+  ok(r.status === 200 && b.bloqueos.some((x) => x.usuario === 'nadie.x'), 'coach ve bloqueos vía admin-accounts');
   const { data: s2 } = await ana.auth.getSession();
   const r2 = await fetch(`${URL_}/functions/v1/admin-accounts`, {
     method: 'POST',
@@ -93,7 +102,7 @@ async function main() {
   // Limpieza: quita los avisos e intentos que generó esta prueba para no ensuciar los datos reales
   const srv = createClient(URL_, SRV, { auth: { persistSession: false } });
   await srv.from('avisos').delete().gte('creado_at', INICIO).in('tipo', ['aprobada', 'bateria']);
-  await srv.from('intentos_login').delete().in('usuario', ['nadie.x', 'ana.l']);
+  for (const u of ['nadie.x', 'ana.l']) await srv.rpc('desbloquear_usuario', { p_usuario: u }); // SEG-004
   console.log(fallas ? `\n${fallas} fallas` : '\nTodo bien (avisos de prueba limpiados).');
   process.exit(fallas ? 1 : 0);
 }

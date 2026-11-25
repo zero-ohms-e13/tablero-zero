@@ -45,6 +45,7 @@ export type Tarea = {
   fecha_limite: string | null;
   creada_por: string | null;
   creada_at: string;
+  actualizada_at: string;
   aprobada_por: string | null;
   aprobada_at: string | null;
   tarea_responsables: { usuario_id: string }[];

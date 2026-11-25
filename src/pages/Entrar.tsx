@@ -13,6 +13,7 @@ const MENSAJES: Record<ErrorEntrar['codigo'] | 'vacio', string> = {
   inactiva: 'Esta cuenta está desactivada. Habla con el coach.',
   temporal_vencida: 'La contraseña de tu ficha ya venció (duran 7 días). Pide una nueva al coach.',
   red: 'Sin internet. Revisa tu conexión y vuelve a intentar.',
+  servicio: 'El servicio no respondió. Espera un momento y vuelve a intentar; no cuenta como intento fallido.',
   config: 'La app aún no está conectada a la base de datos. Avisa al coach.',
 };
 
@@ -61,7 +62,7 @@ export default function Entrar() {
 
         <form onSubmit={enviar} noValidate className="flex flex-col gap-3.5 rounded-[22px] bg-fondo p-[22px] text-tinta">
           {bloqueada && <AvisoBloqueo />}
-          {error && !bloqueada && <Alerta>{MENSAJES[error.codigo]}{malPassword && error.restantes !== undefined && error.restantes <= 2 ? ` Te quedan ${error.restantes} intentos.` : ''}</Alerta>}
+          {error && !bloqueada && <Alerta>{MENSAJES[error.codigo]}</Alerta>}
           <Campo id="usuario" label="Usuario">
             <input
               id="usuario"

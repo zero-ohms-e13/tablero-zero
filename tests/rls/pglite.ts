@@ -20,13 +20,15 @@ create table storage.objects (id uuid primary key default gen_random_uuid(), buc
 alter table storage.objects enable row level security;
 -- Como Supabase: las funciones nuevas nacen ejecutables por anon/authenticated (un revoke posterior sí cuenta)
 alter default privileges in schema public grant execute on functions to anon, authenticated;
+-- Como Supabase: las tablas nuevas nacen con todos los privilegios para anon/authenticated/service_role;
+-- la RLS y los revoke de las migraciones son los que realmente restringen.
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 `;
 
 const GRANTS = `
 grant usage on schema public, auth, storage to anon, authenticated, service_role;
-grant select, insert, update, delete on all tables in schema public to authenticated, service_role;
 grant select, insert, update, delete on storage.objects to authenticated;
-grant usage, select on all sequences in schema public to authenticated;
 grant execute on function auth.uid() to anon, authenticated;
 -- Solo para pruebas: ejecuta SQL y devuelve el mensaje de error (o null si pasó).
 create function public.tz_probar(q text) returns text language plpgsql as $$
@@ -91,10 +93,12 @@ insert into tarea_responsables values
 insert into tarea_pasos (tarea_id, orden, texto) values ('${T.odometria}',1,'Medir ruedas'), ('${T.garra}',1,'Probar límite');
 `;
 
-export async function crearBase() {
-  const db = new PGlite();
-  await db.exec(STUB);
-  for (const f of readdirSync(MIGRACIONES).filter((f) => f.endsWith('.sql') && !f.includes('solo_supabase')).sort()) {
+export function migraciones() {
+  return readdirSync(MIGRACIONES).filter((f) => f.endsWith('.sql') && !f.includes('solo_supabase')).sort();
+}
+
+export async function aplicar(db: PGlite, archivos: string[]) {
+  for (const f of archivos) {
     const sql = readFileSync(join(MIGRACIONES, f), 'utf8').replace(/create extension if not exists pgcrypto;/g, '');
     try {
       await db.exec(sql);
@@ -102,8 +106,23 @@ export async function crearBase() {
       throw new Error(`Migración ${f} falló: ${(e as Error).message}`);
     }
   }
+}
+
+/** Base con todas las migraciones. Con `antesDe`, siembra sobre el esquema ANTERIOR a esa migración,
+ *  ejecuta `entre` (datos sintéticos del esquema viejo) y luego aplica el resto (prueba de actualización). */
+export async function crearBase(op: { antesDe?: string; entre?: (db: PGlite) => Promise<void> } = {}) {
+  const db = new PGlite();
+  await db.exec(STUB);
+  const todas = migraciones();
+  const corte = op.antesDe ? todas.findIndex((f) => f >= op.antesDe!) : -1;
+  const viejas = corte >= 0 ? todas.slice(0, corte) : todas;
+  await aplicar(db, viejas);
   await db.exec(GRANTS);
   await db.exec(SEED);
+  if (corte >= 0) {
+    await op.entre?.(db);
+    await aplicar(db, todas.slice(corte));
+  }
 
   // Ejecuta SQL como un usuario (o anónimo si id = null), igual que PostgREST.
   // Cada llamada va en su propia transacción, como una petición de PostgREST.
@@ -119,5 +138,13 @@ export async function crearBase() {
     const [r] = await como<{ e: string | null }>(id, `select public.tz_probar($q$${sql}$q$) as e`);
     return r.e;
   }
-  return { db, como, falla };
+  // Como la Edge Function (service_role)
+  async function comoServicio<R = Record<string, unknown>>(sql: string) {
+    return db.transaction(async (tx) => {
+      await tx.exec(`set local role service_role;`);
+      const res = await tx.exec(sql);
+      return res[res.length - 1].rows as R[];
+    });
+  }
+  return { db, como, falla, comoServicio };
 }

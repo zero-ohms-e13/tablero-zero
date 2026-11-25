@@ -6,7 +6,7 @@ import { Icon } from '../components/Icon';
 import { MetaCard, TaskCard } from '../components/Tarjetas';
 import { Avatar, Boton, Cargando, EmptyState, HeaderVino, PantallaCel, Sheet, TituloSeccion, WeekStrip, claseCampo, useToast } from '../components/ui';
 import { esMia, useAreas, useAvanceMetas, useCompetencias, useMetas, useMoverEstado, usePedirAyuda, usePerfiles, useTareas } from '../lib/datos';
-import { diasHasta, enSemana, esHoy, haceCuanto, vencida } from '../lib/fechas';
+import { agruparSemana, diasHasta, esHoy, haceCuanto, vencida } from '../lib/fechas';
 import { useSesion } from '../lib/sesion';
 import { supabase } from '../lib/supabase';
 import { ROBOT_NOMBRE, type Tarea } from '../lib/tipos';
@@ -47,16 +47,18 @@ export default function MiTablero() {
   const uid = perfil?.id;
   const todas = tareasQ.data ?? [];
   const mias = todas.filter((t) => esMia(t, uid));
-  const semana = mias.filter((t) => enSemana(t.fecha_limite));
-  const hechasSemana = semana.filter((t) => t.estado === 'hecha').length;
+  // FUN-001: una sola definición de semana (lunes 00:00 a lunes siguiente, Mérida) para pestaña y batería
+  const grupos = agruparSemana(mias);
+  const semana = grupos.semana;
+  const hechasSemana = grupos.hechas;
   const activas = mias.filter((t) => t.estado !== 'hecha');
 
   const lista = useMemo(() => {
     const porFecha = (a: Tarea, b: Tarea) => (a.fecha_limite ?? '9').localeCompare(b.fecha_limite ?? '9');
     if (pestana === 'hecho') return mias.filter((t) => t.estado === 'hecha').sort((a, b) => (b.aprobada_at ?? '').localeCompare(a.aprobada_at ?? ''));
-    if (pestana === 'semana') return activas.slice().sort(porFecha);
+    if (pestana === 'semana') return grupos.pendientes;
     return activas.filter((t) => esHoy(t.fecha_limite) || vencida(t.fecha_limite)).sort(porFecha);
-  }, [pestana, mias, activas]);
+  }, [pestana, mias, activas, grupos.pendientes]);
 
   const areaPrincipal = areas.find((a) => a.id === misAreas[0]);
   const area = (id: string) => areas.find((a) => a.id === id);
@@ -83,6 +85,17 @@ export default function MiTablero() {
       toast({ tipo: 'error', titulo: 'No se pudo mandar.', texto: (e as Error).message });
     }
   }
+
+  const tarjeta = (t: Tarea) => (
+    <TaskCard
+      key={t.id}
+      tarea={t}
+      area={area(t.area_id)}
+      ocupado={mover.isPending}
+      onRevision={t.estado !== 'en_revision' ? () => mandarRevision(t) : undefined}
+      onAyuda={() => setAyudaDe(t)}
+    />
+  );
 
   if (!perfil) return null;
 
@@ -131,6 +144,30 @@ export default function MiTablero() {
         </div>
         {tareasQ.isLoading ? (
           <Cargando />
+        ) : pestana === 'semana' ? (
+          <>
+            {grupos.pendientes.length === 0 && (
+              <EmptyState
+                titulo="Nada pendiente esta semana"
+                texto={activas.length ? 'Abajo están tus vencidas, próximas o sin fecha.' : 'No tienes tareas activas. Pídele una a tu líder.'}
+              />
+            )}
+            {grupos.pendientes.map(tarjeta)}
+            {([
+              ['Vencidas de semanas anteriores', grupos.vencidas],
+              ['Próximas semanas', grupos.proximas],
+              ['Sin fecha', grupos.sinFecha],
+            ] as const).map(([titulo, l]) =>
+              l.length > 0 ? (
+                <div key={titulo} className="flex flex-col gap-3">
+                  <h3 className="m-0 mt-2 text-sm font-semibold text-vino">
+                    {titulo} <span className="font-normal text-tinta-2">· {l.length}</span>
+                  </h3>
+                  {l.map(tarjeta)}
+                </div>
+              ) : null,
+            )}
+          </>
         ) : lista.length === 0 ? (
           pestana === 'hoy' ? (
             <EmptyState
@@ -138,22 +175,11 @@ export default function MiTablero() {
               texto="Revisa la semana o pídele una tarea a tu líder."
               accion={<Boton alto={44} onClick={() => setPestana('semana')}>Ver la semana</Boton>}
             />
-          ) : pestana === 'semana' ? (
-            <EmptyState titulo="Sin pendientes" texto="No tienes tareas activas. Pídele una a tu líder." />
           ) : (
             <EmptyState titulo="Aún no hay tareas hechas" texto="Cuando tu líder apruebe una tarea, aparece aquí y llena tu batería." />
           )
         ) : (
-          lista.map((t) => (
-            <TaskCard
-              key={t.id}
-              tarea={t}
-              area={area(t.area_id)}
-              ocupado={mover.isPending}
-              onRevision={t.estado !== 'en_revision' ? () => mandarRevision(t) : undefined}
-              onAyuda={() => setAyudaDe(t)}
-            />
-          ))
+          lista.map(tarjeta)
         )}
       </section>
 

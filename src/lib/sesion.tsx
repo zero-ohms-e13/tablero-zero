@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
+import { activarCacheDe, cerrarCache, limpiarCopias } from './cache-privada';
 import { FUNCIONES, recordar, supabase } from './supabase';
 import type { Membresia, Perfil } from './tipos';
 
@@ -21,7 +22,7 @@ type Ctx = {
 
 const SesionCtx = createContext<Ctx | null>(null);
 
-export type ErrorEntrar = { codigo: 'incorrecta' | 'bloqueada' | 'inactiva' | 'temporal_vencida' | 'red' | 'config'; restantes?: number };
+export type ErrorEntrar = { codigo: 'incorrecta' | 'bloqueada' | 'inactiva' | 'temporal_vencida' | 'red' | 'config' | 'servicio'; restantes?: number };
 
 export async function entrar(usuario: string, password: string, recordarme: boolean): Promise<ErrorEntrar | null> {
   recordar.set(recordarme);
@@ -67,34 +68,35 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   useEffect(() => {
     let ultimoUid: string | undefined | null = null;
-    // La caché sin conexión es de una sola persona: se guarda con su id y se borra
-    // si entra alguien más o si cierra sesión (celulares compartidos).
-    const DUENO = 'tz.cache.dueno';
-    const limpiarCacheSiCambia = (uid: string | undefined) => {
-      try {
-        if ((localStorage.getItem(DUENO) ?? '') !== (uid ?? '')) {
-          qc.clear();
-          localStorage.removeItem('tz.cache');
-          if (uid) localStorage.setItem(DUENO, uid);
-          else localStorage.removeItem(DUENO);
-        }
-      } catch {
-        qc.clear();
-      }
-    };
+    // Serializa los cambios de sesión: cada evento espera al anterior (cambio A→B rápido, dos pestañas).
+    let cola: Promise<void> = Promise.resolve();
+    limpiarCopias(); // claves de versiones anteriores; la del usuario se restaura al conocer su identidad
     const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
       setSesion(s);
       const uid = s?.user.id;
-      limpiarCacheSiCambia(uid);
       const recargar = evento === 'INITIAL_SESSION' || evento === 'SIGNED_OUT' || evento === 'USER_UPDATED' || (evento === 'SIGNED_IN' && uid !== ultimoUid);
       if (!recargar) return;
       ultimoUid = uid;
       if (evento !== 'INITIAL_SESSION') setCargando(true);
-      setTimeout(() => {
-        cargarPerfil(uid)
-          .catch(() => {})
-          .finally(() => setCargando(false));
-      }, 0);
+      // Fuera del callback (setTimeout) para no trabar el candado interno del cliente de auth.
+      cola = cola.then(
+        () =>
+          new Promise<void>((listo) =>
+            setTimeout(async () => {
+              try {
+                // SEG-003: hidratar solo con identidad conocida; cerrar y borrar la caché al salir o cambiar
+                if (uid) await activarCacheDe(qc, uid);
+                else await cerrarCache(qc);
+                await cargarPerfil(uid);
+              } catch {
+                /* la pantalla de error se encarga */
+              } finally {
+                setCargando(false);
+                listo();
+              }
+            }, 0),
+          ),
+      );
     });
     return () => sub.subscription.unsubscribe();
   }, [cargarPerfil, qc]);

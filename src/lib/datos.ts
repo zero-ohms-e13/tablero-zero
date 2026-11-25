@@ -23,6 +23,7 @@ function okU<T>(r: { data: T[] | null; error: { message: string } | null }): T[]
 export function traducirError(m: string) {
   if (/row-level security|permission denied|42501/i.test(m)) return 'No tienes permiso para hacer eso.';
   if (/Failed to fetch|NetworkError|network/i.test(m)) return 'Sin internet. Intenta cuando vuelva la conexión.';
+  if (/^conflicto: /.test(m)) return m.replace(/^conflicto: /, '').replace(/^./, (c) => c.toUpperCase());
   return m;
 }
 
@@ -203,7 +204,13 @@ export function useRegresar() {
 }
 
 export type TareaForm = {
-  id?: string;
+  id?: string; // tarea existente (edición)
+  /** Alta: id generado una vez por formulario, para que un reintento no duplique la tarea. */
+  nuevo_id?: string;
+  /** Edición: actualizada_at que vio el formulario (detecta cambios concurrentes). */
+  version?: string;
+  /** Token de este intento de guardado: igual en reintentos con los mismos datos (respuesta perdida). */
+  guardado?: string;
   titulo: string;
   para_que_sirve: string;
   area_id: string;
@@ -212,42 +219,31 @@ export type TareaForm = {
   fecha_limite: string | null;
   herramienta_url: string | null;
   responsables: string[];
-  pasos: { id?: string; texto: string; hecho?: boolean }[];
+  pasos: { id: string; texto: string; hecho?: boolean }[];
 };
+
+export const nuevoId = () => crypto.randomUUID();
 
 export function useGuardarTarea() {
   const inv = useInvalidar();
   return useMutation({
+    // FUN-002: una sola transacción en Postgres (RPC guardar_tarea). Si algo falla no queda nada a medias
+    // y el formulario conserva lo escrito; los datos se refrescan solo al confirmar.
     mutationFn: async (f: TareaForm) => {
-      const datos = {
+      const id = f.id ?? f.nuevo_id;
+      if (!id) throw new Error('Falta el identificador de la tarea.');
+      const p = {
+        id,
+        nueva: !f.id,
+        version: f.version ?? null,
+        guardado: f.guardado ?? null,
         titulo: f.titulo.trim(), para_que_sirve: f.para_que_sirve.trim(), area_id: f.area_id, meta_id: f.meta_id,
         robot: f.robot, fecha_limite: f.fecha_limite, herramienta_url: f.herramienta_url?.trim() || null,
+        responsables: f.responsables,
+        pasos: f.pasos.filter((x) => x.texto.trim()).map((x) => ({ id: x.id, texto: x.texto.trim() })),
       };
-      let id = f.id;
-      if (id) {
-        okU(await supabase.from('tareas').update(datos).eq('id', id).select('id'));
-      } else {
-        const r = ok(await supabase.from('tareas').insert(datos).select('id').single()) as { id: string };
-        id = r.id;
-      }
-      // Responsables: agrega los nuevos, quita los que ya no están
-      const { data: actuales } = await supabase.from('tarea_responsables').select('usuario_id').eq('tarea_id', id);
-      const ya = new Set((actuales ?? []).map((r) => r.usuario_id));
-      const nuevos = f.responsables.filter((u) => !ya.has(u));
-      const fuera = [...ya].filter((u) => !f.responsables.includes(u));
-      if (nuevos.length) ok(await supabase.from('tarea_responsables').insert(nuevos.map((usuario_id) => ({ tarea_id: id, usuario_id }))).select('tarea_id'));
-      if (fuera.length) ok(await supabase.from('tarea_responsables').delete().eq('tarea_id', id).in('usuario_id', fuera).select('tarea_id'));
-      // Pasos: se reescriben en orden conservando lo hecho
-      const pasos = f.pasos.filter((p) => p.texto.trim());
-      const { data: viejos } = await supabase.from('tarea_pasos').select('id').eq('tarea_id', id);
-      const conservar = new Set(pasos.filter((p) => p.id).map((p) => p.id));
-      const borrar = (viejos ?? []).map((p) => p.id).filter((x) => !conservar.has(x));
-      if (borrar.length) ok(await supabase.from('tarea_pasos').delete().in('id', borrar).select('id'));
-      for (const [i, p] of pasos.entries()) {
-        if (p.id) okU(await supabase.from('tarea_pasos').update({ orden: i + 1, texto: p.texto.trim() }).eq('id', p.id).select('id'));
-        else ok(await supabase.from('tarea_pasos').insert({ tarea_id: id, orden: i + 1, texto: p.texto.trim() }).select('id'));
-      }
-      return id!;
+      const r = ok(await supabase.rpc('guardar_tarea', { p })) as { id: string; version: string };
+      return r.id;
     },
     onSuccess: (id) => inv(id),
   });

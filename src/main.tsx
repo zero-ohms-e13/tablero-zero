@@ -1,8 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { QueryClient } from '@tanstack/react-query';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './index.css';
 import { aplicarPrefs, leerPrefs } from './lib/preferencias';
 
@@ -19,22 +17,15 @@ const queryClient = new QueryClient({
   },
 });
 
-let almacen: Storage | undefined;
-try {
-  almacen = window.localStorage;
-} catch {
-  almacen = undefined;
-}
-const persister = createSyncStoragePersister({ storage: almacen, key: 'tz.cache' });
-
+// SEG-003: la caché persistente se activa por usuario en lib/cache-privada.ts (desde SesionProvider).
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <PersistQueryClientProvider client={queryClient} persistOptions={{ persister, maxAge: 7 * 86400_000, buster: 'v1' }}>
+    <QueryClientProvider client={queryClient}>
       <SesionProvider>
         <ToastProvider>
           <App />
         </ToastProvider>
       </SesionProvider>
-    </PersistQueryClientProvider>
+    </QueryClientProvider>
   </StrictMode>,
 );

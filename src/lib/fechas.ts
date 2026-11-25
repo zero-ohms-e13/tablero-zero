@@ -17,22 +17,59 @@ export function claveDia(d: Date | string): string {
   return enMerida(d).toISOString().slice(0, 10);
 }
 
-/** Lunes 00:00 y domingo 23:59:59 de la semana que contiene a `d`, como instantes reales. */
-export function semanaDe(d: Date = new Date()): { inicio: Date; fin: Date; dias: Date[] } {
+/** Semana actual de Mérida que contiene a `d`: lunes 00:00 (incluido) a lunes siguiente 00:00 (excluido).
+ *  `fin` es el último milisegundo del domingo (compatibilidad); úsese `finExclusivo` para comparar.
+ *  No depende de la zona del dispositivo (solo aritmética UTC con el desfase fijo de Mérida). */
+export function semanaDe(d: Date = new Date()): { inicio: Date; fin: Date; finExclusivo: Date; dias: Date[] } {
   const m = enMerida(d);
   const dow = (m.getUTCDay() + 6) % 7; // 0 = lunes
   const lunesPared = Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), m.getUTCDate() - dow);
   const inicio = new Date(lunesPared - OFFSET_MS);
-  const fin = new Date(inicio.getTime() + 7 * 86400_000 - 1);
+  const finExclusivo = new Date(inicio.getTime() + 7 * 86400_000);
+  const fin = new Date(finExclusivo.getTime() - 1);
   const dias = Array.from({ length: 7 }, (_, i) => new Date(inicio.getTime() + i * 86400_000));
-  return { inicio, fin, dias };
+  return { inicio, fin, finExclusivo, dias };
 }
 
 export function enSemana(fecha: string | null, d: Date = new Date()) {
   if (!fecha) return false;
-  const { inicio, fin } = semanaDe(d);
+  const { inicio, finExclusivo } = semanaDe(d);
   const t = new Date(fecha).getTime();
-  return t >= inicio.getTime() && t <= fin.getTime();
+  return t >= inicio.getTime() && t < finExclusivo.getTime();
+}
+
+type ConFecha = { fecha_limite: string | null; estado: string };
+
+/** FUN-001 · Una sola definición de semana para la pestaña Semana y la batería.
+ *  - semana: TODAS las tareas con fecha en la semana actual (numerador = hechas, denominador = total).
+ *  - pendientes: las de la semana sin terminar (pestaña Semana).
+ *  - vencidas: sin terminar con fecha de semanas anteriores.
+ *  - proximas: sin terminar con fecha de semanas siguientes.
+ *  - sinFecha: sin terminar y sin fecha. Las hechas siguen en la pestaña Hecho. */
+export function agruparSemana<T extends ConFecha>(tareas: T[], ahora: Date = new Date()) {
+  const { inicio, finExclusivo } = semanaDe(ahora);
+  const ini = inicio.getTime();
+  const fin = finExclusivo.getTime();
+  const semana: T[] = [];
+  const pendientes: T[] = [];
+  const vencidas: T[] = [];
+  const proximas: T[] = [];
+  const sinFecha: T[] = [];
+  for (const t of tareas) {
+    const hecha = t.estado === 'hecha';
+    if (!t.fecha_limite) {
+      if (!hecha) sinFecha.push(t);
+      continue;
+    }
+    const f = new Date(t.fecha_limite).getTime();
+    if (f >= ini && f < fin) {
+      semana.push(t);
+      if (!hecha) pendientes.push(t);
+    } else if (!hecha) (f < ini ? vencidas : proximas).push(t);
+  }
+  const porFecha = (a: T, b: T) => (a.fecha_limite ?? '9').localeCompare(b.fecha_limite ?? '9');
+  [pendientes, vencidas, proximas].forEach((l) => l.sort(porFecha));
+  return { inicio, finExclusivo, semana, hechas: semana.length - pendientes.length, pendientes, vencidas, proximas, sinFecha };
 }
 
 export function esHoy(fecha: string | null) {

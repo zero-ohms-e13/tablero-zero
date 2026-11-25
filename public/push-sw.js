@@ -35,3 +35,13 @@ self.addEventListener('notificationclick', (event) => {
     }),
   );
 });
+
+// SEG-003: al activar esta versión, borrar cachés de versiones anteriores que guardaban datos autenticados.
+// Se conservan el precache de Workbox (estructura de la app) y las fuentes.
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((nombres) =>
+      Promise.all(nombres.filter((n) => n === 'datos' || /supabase|rest-v1/i.test(n)).map((n) => caches.delete(n))),
+    ),
+  );
+});
