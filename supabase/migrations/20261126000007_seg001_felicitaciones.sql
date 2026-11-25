@@ -2,8 +2,13 @@
 -- Antes, las políticas fel_insert/fel_delete permitían INSERT/DELETE directo por la API REST
 -- con reglas distintas a las de la RPC (por ejemplo, felicitarse a uno mismo o felicitar tareas sin terminar).
 --
--- Recuperación: para volver al estado anterior, recrear las políticas fel_insert y fel_delete
--- (ver 20261124000002_permisos.sql) y volver a otorgar INSERT, DELETE a authenticated.
+-- Compatibilidad: el frontend anterior y el nuevo escriben SOLO con la RPC felicitar (Logros.tsx),
+-- así que ambos funcionan con esta migración. La RPC conserva su firma felicitar(p_tarea uuid).
+-- Recuperación (reversión completa; recrear las políticas NO basta, también hay que devolver privilegios):
+--   grant insert, delete on public.felicitaciones to authenticated;
+--   create policy fel_insert ... y create policy fel_delete ... (texto en 20261124000002_permisos.sql)
+--   grant execute on function public.felicitar(uuid) to anon;   -- solo si se quiere el estado previo exacto
+-- La versión de felicitar() de esta migración puede quedarse: funciona con ambos frontends.
 
 drop policy if exists fel_insert on public.felicitaciones;
 drop policy if exists fel_delete on public.felicitaciones;
