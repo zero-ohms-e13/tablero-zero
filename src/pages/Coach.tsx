@@ -119,7 +119,7 @@ export default function Coach() {
       <section className="flex flex-col gap-3 rounded-[20px] border border-linea bg-white px-5 py-[18px]">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="m-0 font-titulo text-xl font-bold text-vino">{proxima ? `Metas rumbo a ${proxima.nombre}` : 'Metas del robot'}</h2>
-          <span className="text-[13px] text-tinta-3">Editar metas llega en la fase 3</span>
+          <Link to="/coach/metas" className="text-[13px]">Editar metas</Link>
         </div>
         {metasProx.length === 0 && <span className="text-sm text-tinta-3">Aún no hay metas.</span>}
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
@@ -129,7 +129,7 @@ export default function Coach() {
             return (
               <div key={m.id} className="flex flex-col gap-2.5 rounded-2xl border border-linea p-3.5">
                 <div className="flex justify-between gap-2 text-xs">
-                  {a && <span className="flex items-center gap-1.5 font-semibold" style={{ color: a.color }}><span className="h-2 w-2 rounded-full" style={{ background: a.color }} />{a.nombre}</span>}
+                  {a && <span className="texto-area flex items-center gap-1.5 font-semibold" style={{ color: a.color }}><span className="h-2 w-2 rounded-full" style={{ background: a.color }} />{a.nombre}</span>}
                   <span className="font-mono text-tinta-3">{ROBOT_NOMBRE[m.robot]}{m.fecha ? ` · ${fechaCorta(m.fecha + 'T18:00:00Z')}` : ''}</span>
                 </div>
                 <strong className="font-titulo text-base font-semibold leading-[1.25]">{m.titulo}</strong>
@@ -179,7 +179,7 @@ export default function Coach() {
         <section className="flex flex-col gap-3 rounded-[20px] border border-linea bg-white px-5 py-[18px]">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="m-0 font-titulo text-xl font-bold text-vino">Tablero de {tableroArea.nombre}</h2>
-            <span className="text-xs text-tinta-3">Solo lectura · arrastrar tarjetas llega en la fase 2</span>
+            <Link to={`/coach/area/${tableroArea.id}`} className="text-[13px]">Abrir tablero completo (arrastrar tarjetas)</Link>
           </div>
           <div className="overflow-x-auto pb-1">
             <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(4, minmax(200px, 1fr))' }}>

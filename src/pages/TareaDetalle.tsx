@@ -137,7 +137,7 @@ export default function TareaDetalle() {
       <section className="mx-4 mt-[18px] flex flex-col gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
           {area && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: area.color }}>
+            <span className="texto-area inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: area.color }}>
               <span className="h-2 w-2 rounded-full" style={{ background: area.color }} />{area.nombre}
             </span>
           )}

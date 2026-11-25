@@ -22,9 +22,49 @@
   * { transition: none !important; }
 }
 
-/* Imprimir solo las fichas de acceso */
+/* Imprimir: solo las fichas (hoja carta, 4 por hoja) */
 @media print {
+  @page { size: letter; margin: 0; }
+  html.oscuro body, body { background: #fff !important; zoom: 1 !important; }
   body * { visibility: hidden; }
-  #fichas-imprimir, #fichas-imprimir * { visibility: visible; }
-  #fichas-imprimir { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .imprimible, .imprimible *, #fichas-imprimir, #fichas-imprimir * { visibility: visible; }
+  .imprimible { position: absolute; inset: 0; gap: 0 !important; }
+  .imprimible .hoja-carta { width: 8.5in; height: 11in; max-width: none; box-shadow: none; page-break-after: always; }
+  #fichas-imprimir { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0.4in; }
+  .no-imprimir { display: none !important; }
 }
+
+/* ---------- Letra grande (Perfil) ---------- */
+/* Muchas medidas están en px; zoom escala todo parejo y el diseño se reacomoda solo. */
+html.letra-grande body { zoom: 1.15; }
+
+/* ---------- Modo oscuro (Perfil) ---------- */
+/* Vino sigue siendo el color de marca de encabezados y botones; se oscurecen fondo,
+   tarjetas y textos. Todos los pares de texto pasan 4.5:1. */
+html.oscuro { color-scheme: dark; }
+html.oscuro body { background: #1C110D; color: #F3E2C1; }
+html.oscuro .bg-fondo { background-color: #1C110D; }
+html.oscuro .bg-white { background-color: #2A1B15; }
+html.oscuro .bg-kanban { background-color: #24170F; }
+html.oscuro .bg-crema:not(header *):not(.bg-vino *) { background-color: #3A2619; }
+html.oscuro .bg-vacio { background-color: #3A2A20; }
+html.oscuro .text-tinta { color: #F3E2C1; }
+html.oscuro .text-tinta-2 { color: #D9C4A3; }
+html.oscuro .text-tinta-3 { color: #C2AC8C; }
+html.oscuro .text-vino:not(.bg-ambar):not(.bg-crema) { color: #F2B8A8; }
+html.oscuro .bg-crema.text-vino, html.oscuro .bg-white.text-vino { color: #F2B8A8; }
+html.oscuro .border-linea, html.oscuro .border-\[\#F0E4CC\] { border-color: #4A3426; }
+html.oscuro .border-linea-campo { border-color: #5C4331; }
+html.oscuro .border-vino:not(.bg-vino) { border-color: #F2B8A8; }
+html.oscuro a { color: #F2B8A8; }
+html.oscuro a.bg-vino, html.oscuro a.bg-ambar, html.oscuro .bg-vino a, html.oscuro header a { color: inherit; }
+html.oscuro input, html.oscuro select, html.oscuro textarea { color: #F3E2C1; }
+html.oscuro .bg-fondo\/0, html.oscuro .bg-\[\#F6D6D6\] { background-color: #4A1A16; }
+html.oscuro .bg-\[\#F6D6D6\] { color: #F6D6D6; }
+html.oscuro .bg-urgente-fondo { background-color: #4A2C14; color: #F6C99A; }
+html.oscuro .bg-atiempo-fondo { background-color: #1F3523; color: #B9DDB8; }
+html.oscuro .bg-\[\#F0D3AE\] { background-color: #4A3420; }
+html.oscuro .rounded-header.bg-vino, html.oscuro aside.bg-vino { background-color: #3E0101; }
+/* Nombres de área en su color: se aclaran sobre fondo oscuro para seguir pasando 4.5:1 */
+html.oscuro .texto-area { filter: brightness(2.3) saturate(0.85); }
+html.oscuro .texto-area .rounded-full { filter: none; }

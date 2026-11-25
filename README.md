@@ -72,6 +72,8 @@ npx supabase db push
 
 ## 4. Desplegar las Edge Functions
 
+Son tres: `entrar` (login), `admin-accounts` (cuentas, solo coach) y `push` (avisos en el celular).
+
 ```powershell
 npx supabase functions deploy entrar --no-verify-jwt
 ```
@@ -83,6 +85,18 @@ npx supabase functions deploy admin-accounts --no-verify-jwt
 Supabase les entrega solas la `SUPABASE_SERVICE_ROLE_KEY`, así que no la tienes que pegar en ningún lado.
 
 Las dos funciones revisan la sesión por dentro. Por eso se despliegan con `--no-verify-jwt`.
+
+```powershell
+npx supabase functions deploy push --no-verify-jwt
+```
+
+Para los avisos en el celular, corre **una sola vez**:
+
+```powershell
+node scripts/configurar-push.mjs
+```
+
+Genera las llaves VAPID y un secreto, los guarda como secretos de Supabase (no se imprimen) y registra la URL de la función. Un trigger de la base de datos manda el push cada vez que se crea un aviso, y `pg_cron` manda a las 8:00 los recordatorios de tareas que vencen hoy.
 
 Opcional: limita desde qué dirección se puede llamar a las funciones:
 
@@ -167,6 +181,14 @@ git push -u origin master
 - Las fotos de evidencia van a un bucket **privado** y se comprimen en el navegador a menos de 300 KB.
 - La app es `noindex`, no tiene páginas públicas y no pide correo, teléfono ni CURP.
 - Al cerrar el ciclo, el coach puede desactivar o borrar las cuentas de egresados desde **Cuentas**.
+
+## Qué incluye cada fase
+
+- **Fase 1:** login sin correo, primer ingreso, roles con RLS, Mi tablero, detalle de tarea, crear y editar, Mi área, panel del coach, Cuentas y estados.
+- **Fase 2:** vista del tutor con "Escribir al coach", fichas imprimibles (`/coach/fichas`), kanban por área con arrastrar y soltar (`/coach/area`, `/area/tablero`), y perfil con letra grande y modo oscuro.
+- **Fase 3:** metas y competencias (`/coach/metas`), bitácora de cada meta exportable a CSV o PDF, logros con felicitaciones (`/logros`), centro de avisos y notificaciones push.
+
+Publicado en <https://tablero-zero.vercel.app>. Cada push a `master` publica solo.
 
 ## Estructura
 

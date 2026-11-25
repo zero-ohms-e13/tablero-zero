@@ -159,3 +159,43 @@ describe('Cuentas y coach', () => {
     expect(await como(U.coach, 'select * from intentos_login')).toHaveLength(0);
   });
 });
+
+describe('Fase 2 y 3', () => {
+  it('logros: el tutor no ve nombres de otros alumnos', async () => {
+    await como(U.luis, `select aprobar_tarea('${T.torre}')`).catch(() => {});
+    await como(U.coach, `update tareas set estado = 'hecha' where id = '${T.post}'`);
+    const r = await como<{ quien: string }>(U.tutorAna, `select quien from logros_equipo(50)`);
+    expect(r.length).toBeGreaterThan(0);
+    expect(r.every((x) => x.quien === 'Alguien del equipo' || x.quien === 'Ana')).toBe(true);
+    const alumna = await como<{ quien: string }>(U.ana, `select quien from logros_equipo(50) where tarea_id = '${T.post}'`);
+    expect(alumna[0].quien).toBe('Sofía');
+  });
+
+  it('felicitar: alumnos sí (cualquier área), tutores no; avisa a quien la terminó', async () => {
+    const [r] = await como<{ felicitar: boolean }>(U.ana, `select felicitar('${T.post}')`);
+    expect(r.felicitar).toBe(true);
+    const av = await como(U.sofia, `select titulo from avisos where tipo = 'felicitacion'`);
+    expect(av).toHaveLength(1);
+    expect(await falla(U.tutorAna, `select felicitar('${T.post}')`)).toMatch(/equipo/);
+    const [r2] = await como<{ felicitar: boolean }>(U.ana, `select felicitar('${T.post}')`);
+    expect(r2.felicitar).toBe(false);
+  });
+
+  it('escribir al coach: llega como aviso a coaches, no a alumnos', async () => {
+    await como(U.tutorLuis, `select escribir_al_coach('¿Cómo va Luis con el DR4B?')`);
+    expect(await como(U.coach, `select titulo from avisos where tipo = 'mensaje'`)).toHaveLength(1);
+    expect(await como(U.aux, `select titulo from avisos where tipo = 'mensaje'`)).toHaveLength(1);
+    expect(await como(U.marco, `select titulo from avisos where tipo = 'mensaje'`)).toHaveLength(0);
+  });
+
+  it('suscripciones push: cada quien solo las suyas; config privada invisible', async () => {
+    await como(U.ana, `insert into suscripciones_push (usuario_id, endpoint, p256dh, auth) values ('${U.ana}', 'https://push.example/a', 'p', 'a')`);
+    expect(await falla(U.ana, `insert into suscripciones_push (usuario_id, endpoint, p256dh, auth) values ('${U.diego}', 'https://push.example/d', 'p', 'a')`)).toMatch(/row-level security/);
+    expect(await como(U.diego, `select id from suscripciones_push`)).toHaveLength(0);
+    expect(await como(U.coach, `select * from config_privada`)).toHaveLength(0);
+  });
+
+  it('el recordatorio diario no se puede llamar desde el navegador', async () => {
+    expect(await falla(U.coach, `select recordar_vencen_hoy()`)).toMatch(/permission denied/);
+  });
+});

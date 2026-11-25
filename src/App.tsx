@@ -11,10 +11,14 @@ const TareaForm = lazy(() => import('./pages/TareaForm'));
 const MiArea = lazy(() => import('./pages/MiArea'));
 const Coach = lazy(() => import('./pages/Coach'));
 const Cuentas = lazy(() => import('./pages/Cuentas'));
+const TableroArea = lazy(() => import('./pages/TableroArea'));
+const Fichas = lazy(() => import('./pages/Fichas'));
 const Varias = import('./pages/Varias');
-const Perfil = lazy(() => Varias.then((m) => ({ default: m.Perfil })));
+const Perfil = lazy(() => import('./pages/Perfil'));
 const Avisos = lazy(() => Varias.then((m) => ({ default: m.Avisos })));
-const Logros = lazy(() => Varias.then((m) => ({ default: m.Logros })));
+const Logros = lazy(() => import('./pages/Logros'));
+const Metas = lazy(() => import('./pages/Metas'));
+const BitacoraMeta = lazy(() => import('./pages/Metas').then((m) => ({ default: m.BitacoraMeta })));
 const Familia = lazy(() => Varias.then((m) => ({ default: m.Familia })));
 const Estados = lazy(() => Varias.then((m) => ({ default: m.Estados })));
 
@@ -48,11 +52,19 @@ export default function App() {
           <Route path="/tarea/:id/editar" element={<Protegida roles={['alumno', 'coach']}><TareaForm /></Protegida>} />
           <Route path="/tarea/:id" element={<Protegida><TareaDetalle /></Protegida>} />
           <Route path="/coach" element={<Protegida roles={['coach']}><Coach /></Protegida>} />
+          <Route path="/coach/area" element={<Protegida roles={['coach']}><TableroArea modo="coach" /></Protegida>} />
+          <Route path="/coach/area/:id" element={<Protegida roles={['coach']}><TableroArea modo="coach" /></Protegida>} />
+          <Route path="/area/tablero" element={<Protegida roles={['alumno']}><TableroArea modo="lider" /></Protegida>} />
+          <Route path="/area/tablero/:id" element={<Protegida roles={['alumno']}><TableroArea modo="lider" /></Protegida>} />
+          <Route path="/coach/fichas" element={<Protegida roles={['coach']}><Fichas /></Protegida>} />
           <Route path="/coach/cuentas" element={<Protegida roles={['coach']}><Cuentas /></Protegida>} />
           <Route path="/familia" element={<Protegida roles={['tutor']}><Familia /></Protegida>} />
           <Route path="/perfil" element={<Protegida><Perfil /></Protegida>} />
           <Route path="/avisos" element={<Protegida><Avisos /></Protegida>} />
-          <Route path="/logros" element={<Protegida roles={['alumno']}><Logros /></Protegida>} />
+          <Route path="/logros" element={<Protegida roles={['alumno', 'coach']}><Logros /></Protegida>} />
+          <Route path="/coach/logros" element={<Protegida roles={['coach']}><Logros /></Protegida>} />
+          <Route path="/coach/metas" element={<Protegida roles={['coach']}><Metas /></Protegida>} />
+          <Route path="/coach/metas/:id" element={<Protegida roles={['coach']}><BitacoraMeta /></Protegida>} />
           <Route path="/estados" element={<Estados />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -5,57 +5,17 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Battery, BateriaPorcentaje } from '../components/Battery';
 import { Icon } from '../components/Icon';
+import { LayoutCoach } from '../components/Coach';
 import { MetaCard } from '../components/Tarjetas';
 import { Alerta, AvisoBloqueo, Avatar, Boton, Cargando, ChipFecha, EmptyState, HeaderVino, PantallaCel, Sheet, TituloSeccion, WeekStrip, claseCampo, useToast } from '../components/ui';
 import { RegresarConNota } from './Revisar';
-import { AvisoCompleto } from './Bienvenida';
 import { esMia, useAreas, useAvanceAreas, useAvanceMetas, useCompetencias, useMetas, usePerfiles, useTareas, useTutores } from '../lib/datos';
-import { diasHasta, diaMes, enSemana, haceCuanto, vencida } from '../lib/fechas';
+import { claveDia, diasHasta, diaMes, enSemana, haceCuanto, vencida } from '../lib/fechas';
 import { useSesion } from '../lib/sesion';
 import { supabase } from '../lib/supabase';
 import { ETIQUETA_ESTADO, ROBOT_NOMBRE } from '../lib/tipos';
 
-export function Perfil() {
-  const { perfil, membresias, salir, esTutor } = useSesion();
-  const { data: areas = [] } = useAreas();
-  const { data: tareas = [] } = useTareas();
-  const [cambiar, setCambiar] = useState(false);
-  const [aviso, setAviso] = useState(false);
-  if (!perfil) return null;
-  const hechas = tareas.filter((t) => esMia(t, perfil.id) && t.estado === 'hecha').length;
-  const misAreas = membresias.map((m) => areas.find((a) => a.id === m.area_id)?.nombre).filter(Boolean).join(' · ');
-  const contenido = (
-    <>
-      <HeaderVino>
-        <div className="flex items-center gap-3">
-          <Avatar iniciales={perfil.iniciales} color={perfil.color} size={56} />
-          <div className="flex flex-col gap-0.5">
-            <span className="font-titulo text-[22px] font-bold">{perfil.nombre_visible}</span>
-            <span className="font-mono text-[13px] opacity-90">{perfil.usuario}</span>
-            {misAreas && <span className="text-[13px] opacity-90">{misAreas} · {membresias.some((m) => m.es_lider) ? 'Líder' : 'Integrante'}</span>}
-          </div>
-        </div>
-      </HeaderVino>
-      <section className="mx-4 mt-[18px] flex flex-col gap-2.5">
-        {!esTutor && (
-          <div className="flex flex-col gap-0.5 rounded-tarjeta border border-linea bg-white p-4">
-            <span className="font-titulo text-[28px] font-bold text-vino">{hechas}</span>
-            <span className="text-[13px] text-tinta-2">tareas hechas</span>
-          </div>
-        )}
-        <Boton variante="fantasma" className="justify-start" onClick={() => setCambiar(true)}><Icon name="llave" size={18} /> Cambiar contraseña</Boton>
-        {esTutor && <Boton variante="fantasma" className="justify-start" onClick={() => setAviso(true)}>Leer el aviso de privacidad</Boton>}
-        <span className="px-1 text-xs text-tinta-3">Letra grande, modo oscuro y avisos en el celular llegan en la siguiente fase.</span>
-        <Boton variante="secundario" onClick={salir}><Icon name="salir" size={18} /> Cerrar sesión</Boton>
-      </section>
-      <CambiarPassword abierto={cambiar} onCerrar={() => setCambiar(false)} />
-      <Sheet abierto={aviso} onCerrar={() => setAviso(false)} titulo="Aviso de privacidad"><AvisoCompleto /></Sheet>
-    </>
-  );
-  return esTutor ? <div className="mx-auto min-h-screen max-w-[480px] bg-fondo pb-8">{contenido}<div className="mx-4 mt-4"><Link to="/familia">Regresar</Link></div></div> : <PantallaCel>{contenido}</PantallaCel>;
-}
-
-function CambiarPassword({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+export function CambiarPassword({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
   const toast = useToast();
   const [p1, setP1] = useState('');
   const [p2, setP2] = useState('');
@@ -87,12 +47,17 @@ function CambiarPassword({ abierto, onCerrar }: { abierto: boolean; onCerrar: ()
   );
 }
 
+const ICONO_AVISO: Record<string, string> = {
+  aprobada: 'palomita', comentario: 'enviar', vence: 'alerta', asignada: 'mas', regresada: 'atras',
+  bateria: 'rayo', felicitacion: 'estrella', mensaje: 'enviar',
+};
+
 export function Avisos() {
   const qc = useQueryClient();
-  const { esTutor } = useSesion();
+  const { esTutor, esCoach } = useSesion();
   const { data = [], isLoading } = useQuery({
     queryKey: ['avisos'],
-    queryFn: async () => (await supabase.from('avisos').select('*').order('creado_at', { ascending: false }).limit(50)).data ?? [],
+    queryFn: async () => (await supabase.from('avisos').select('*').order('creado_at', { ascending: false }).limit(80)).data ?? [],
   });
   const sinLeer = data.filter((a) => !a.leido).length;
   async function marcar() {
@@ -100,35 +65,65 @@ export function Avisos() {
     qc.invalidateQueries({ queryKey: ['avisos'] });
     qc.invalidateQueries({ queryKey: ['avisos_sin_leer'] });
   }
+  async function abrir(id: string) {
+    await supabase.from('avisos').update({ leido: true }).eq('id', id);
+    qc.invalidateQueries({ queryKey: ['avisos_sin_leer'] });
+  }
+  const hoy = claveDia(new Date());
+  const ayer = claveDia(new Date(Date.now() - 86400_000));
+  const grupos: [string, typeof data][] = [];
+  for (const a of data) {
+    const k = claveDia(a.creado_at);
+    const g = k === hoy ? 'HOY' : k === ayer ? 'AYER' : 'ANTES';
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo[0] === g) ultimo[1].push(a);
+    else grupos.push([g, [a]]);
+  }
+  const lista = (
+    <section className={`flex flex-col gap-2 ${esCoach ? 'max-w-2xl' : 'mx-4 mt-4'}`}>
+      {isLoading ? <Cargando /> : data.length === 0 ? <EmptyState titulo="Sin avisos" texto="Aquí verás cuando te asignen, aprueben o comenten una tarea." /> : grupos.map(([g, items]) => (
+        <div key={g} className="flex flex-col gap-2">
+          <span className="mt-2 font-mono text-[11px] tracking-[.08em] text-tinta-3">{g}</span>
+          {items.map((a) => (
+            <Link key={a.id} to={a.tarea_id ? `/tarea/${a.tarea_id}` : '#'} onClick={() => !a.leido && abrir(a.id)} className={`flex items-start gap-3 rounded-2xl border bg-white p-3.5 text-tinta no-underline ${a.leido ? 'border-linea' : 'border-2 border-ambar'}`}>
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-campo ${a.leido ? 'bg-crema text-vino' : 'bg-vino text-crema'}`}><Icon name={ICONO_AVISO[a.tipo] ?? 'campana'} size={18} /></span>
+              <span className="flex min-w-0 flex-grow flex-col gap-0.5">
+                <strong className="text-sm">{a.titulo}</strong>
+                {a.detalle && <span className="text-[13px] text-tinta-2">{a.tipo === 'comentario' || a.tipo === 'regresada' || a.tipo === 'mensaje' ? `“${a.detalle}”` : a.detalle}</span>}
+                <span className="text-xs text-tinta-3">{haceCuanto(a.creado_at)}</span>
+              </span>
+              {!a.leido && <span aria-label="sin leer" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-ambar" />}
+            </Link>
+          ))}
+        </div>
+      ))}
+    </section>
+  );
+  const boton = sinLeer > 0 && (
+    <button onClick={marcar} className={`h-11 rounded-campo px-3 text-[13px] ${esCoach ? 'border border-vino bg-white text-vino' : 'border border-crema/35 bg-transparent text-crema'}`}>Marcar leídos</button>
+  );
+  if (esCoach) {
+    return (
+      <LayoutCoach>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="font-mono text-xs tracking-[.06em] text-tinta-3">{sinLeer ? `${sinLeer} SIN LEER` : 'TODO LEÍDO'}</span>
+            <h1 className="m-0 font-titulo text-[30px] font-bold text-vino">Avisos</h1>
+          </div>
+          {boton}
+        </div>
+        {lista}
+      </LayoutCoach>
+    );
+  }
   const cuerpo = (
     <>
-      <HeaderVino titulo="Avisos" subtitulo={sinLeer ? `${sinLeer} sin leer` : 'Todo leído'} atras={esTutor ? '/familia' : '/'} accion={sinLeer > 0 && (
-        <button onClick={marcar} className="h-11 rounded-campo border border-crema/35 bg-transparent px-3 text-[13px] text-crema">Marcar leídos</button>
-      )} />
-      <section className="mx-4 mt-4 flex flex-col gap-2">
-        {isLoading ? <Cargando /> : data.length === 0 ? <EmptyState titulo="Sin avisos" texto="Aquí verás cuando te asignen, aprueben o comenten una tarea." /> : data.map((a) => (
-          <Link key={a.id} to={a.tarea_id ? `/tarea/${a.tarea_id}` : '#'} className={`flex items-start gap-3 rounded-2xl border bg-white p-3.5 text-tinta no-underline ${a.leido ? 'border-linea' : 'border-2 border-ambar'}`}>
-            {!a.leido && <span aria-label="sin leer" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-ambar" />}
-            <span className="flex flex-col gap-0.5">
-              <strong className="text-sm">{a.titulo}</strong>
-              {a.detalle && <span className="text-[13px] text-tinta-2">{a.detalle}</span>}
-              <span className="text-xs text-tinta-3">{haceCuanto(a.creado_at)}</span>
-            </span>
-          </Link>
-        ))}
-      </section>
+      <HeaderVino titulo="Avisos" subtitulo={sinLeer ? `${sinLeer} sin leer` : 'Todo leído'} atras={esTutor ? '/familia' : '/'} accion={boton} />
+      {lista}
+      <div className="h-4" />
     </>
   );
   return esTutor ? <div className="mx-auto min-h-screen max-w-[480px] bg-fondo pb-8">{cuerpo}</div> : <PantallaCel>{cuerpo}</PantallaCel>;
-}
-
-export function Logros() {
-  return (
-    <PantallaCel>
-      <HeaderVino titulo="Logros del equipo" />
-      <div className="m-4"><EmptyState titulo="Llega en la fase 3" texto="Aquí verás las tareas terminadas del equipo y podrás felicitar." accion={<Link to="/" className="font-semibold">Ir a Mi tablero</Link>} /></div>
-    </PantallaCel>
-  );
 }
 
 /** Vista tutor (versión preliminar; la completa es de la fase 2). Solo lectura. */
@@ -222,7 +217,7 @@ export function Familia() {
             const p = a.total ? Math.round((a.hechas / a.total) * 100) : 0;
             return (
               <div key={a.area_id} className="flex items-center gap-3">
-                <span className="w-28 text-sm font-semibold" style={{ color: a.color }}>{a.nombre}</span>
+                <span className="texto-area w-28 text-sm font-semibold" style={{ color: a.color }}>{a.nombre}</span>
                 <div className="h-3 flex-grow rounded bg-vacio"><div className="h-full rounded bg-cobre" style={{ width: `${p}%` }} /></div>
                 <span className="w-10 text-right font-mono text-xs">{p}%</span>
               </div>
@@ -235,8 +230,49 @@ export function Familia() {
             <span className="flex flex-col"><span className="text-xs opacity-85">Próxima competencia</span><strong className="font-titulo text-lg">{proxima.nombre}</strong><span className="text-xs">{diaMes(proxima.fecha_inicio + 'T18:00:00Z')}</span></span>
           </div>
         )}
+        <EscribirAlCoach />
       </section>
     </div>
+  );
+}
+
+/** Tutor (o alumno): manda un mensaje corto que le llega al coach como aviso. */
+export function EscribirAlCoach() {
+  const toast = useToast();
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  async function enviar(e: FormEvent) {
+    e.preventDefault();
+    if (!texto.trim()) return setError('Escribe tu mensaje.');
+    setEnviando(true);
+    const { error: er } = await supabase.rpc('escribir_al_coach', { p_texto: texto.trim() });
+    setEnviando(false);
+    if (er) return setError('No se envió. Revisa tu conexión y vuelve a intentar.');
+    setTexto('');
+    setError(null);
+    setAbierto(false);
+    toast({ titulo: 'Mensaje enviado.', texto: 'El coach lo verá en sus avisos.' });
+  }
+  return (
+    <>
+      <button onClick={() => setAbierto(true)} className="flex h-12 items-center justify-center gap-2 rounded-campo border border-vino bg-white text-[15px] font-medium text-vino">
+        <Icon name="enviar" size={18} /> Escribir al coach
+      </button>
+      <Sheet abierto={abierto} onCerrar={() => setAbierto(false)} titulo="Escribir al coach">
+        <form onSubmit={enviar} className="flex flex-col gap-3">
+          {error && <Alerta>{error}</Alerta>}
+          <label htmlFor="msg-coach" className="text-[13px] font-semibold text-vino">Tu mensaje</label>
+          <textarea id="msg-coach" rows={4} maxLength={600} value={texto} onChange={(e) => setTexto(e.target.value)} className={`${claseCampo} h-auto resize-none py-3 leading-[1.4]`} placeholder="¿Cómo va mi hijo(a) con la tarea del chasis?" />
+          <span className="text-xs text-tinta-2">Le llega al coach como aviso dentro de la app. No se envían correos.</span>
+          <div className="flex gap-2">
+            <Boton type="button" variante="secundario" onClick={() => setAbierto(false)}>Cancelar</Boton>
+            <Boton type="submit" className="flex-grow" disabled={enviando}>Enviar</Boton>
+          </div>
+        </form>
+      </Sheet>
+    </>
   );
 }
 

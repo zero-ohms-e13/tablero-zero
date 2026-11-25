@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icono.svg', 'robots.txt'],
+      includeAssets: ['icono.svg', 'robots.txt', 'push-sw.js'],
       manifest: {
         name: 'Tablero Zero',
         short_name: 'Tablero Zero',
@@ -24,6 +24,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
         runtimeCaching: [
           {

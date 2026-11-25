@@ -23,12 +23,6 @@ export function SidebarCoach() {
       {texto}
     </NavLink>
   );
-  const pronto = (texto: string) => (
-    <span aria-disabled="true" className="flex items-center justify-between rounded-[10px] px-3.5 py-[11px] text-sm text-crema/70">
-      {texto}
-      <span className="rounded-full border border-crema/30 px-2 py-0.5 text-[10px]">pronto</span>
-    </span>
-  );
   return (
     <aside className="box-border flex w-full flex-col gap-1 bg-vino px-[18px] py-5 text-crema md:min-h-screen md:w-[250px] md:shrink-0 md:py-7">
       <div className="mb-4 flex flex-col gap-2.5 px-1.5 md:mb-6">
@@ -37,10 +31,12 @@ export function SidebarCoach() {
       </div>
       <nav aria-label="Coach" className="flex flex-col gap-1">
         {item('/coach', 'Panel', true)}
-        {pronto('Tableros por área')}
-        {pronto('Metas y competencias')}
+        {item('/coach/area', 'Tableros por área')}
+        {item('/coach/metas', 'Metas y competencias')}
         {item('/coach/cuentas', 'Cuentas y fichas de tutor')}
-        {pronto('Logros del equipo')}
+        {item('/coach/logros', 'Logros del equipo')}
+        {item('/avisos', 'Avisos y mensajes')}
+        {item('/perfil', 'Mi perfil')}
       </nav>
       <div className="mt-4 flex flex-col gap-1 border-t border-crema/20 pt-4 md:mt-auto">
         <span className="px-3.5 text-xs opacity-80">{perfil?.rol_global === 'coach_aux' ? 'Mentor' : 'Coach'} · {perfil?.nombre_visible.replace(/^Coach\s+/, '')}</span>

@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { EditarNombre, LayoutCoach } from '../components/Coach';
 import { Icon } from '../components/Icon';
 import { Wordmark } from '../components/Marca';
@@ -16,8 +17,8 @@ type RolForm = 'integrante' | 'lider' | 'tutor' | 'coach_aux';
 
 export default function Cuentas() {
   const { perfil: yo, esCoachPrincipal } = useSesion();
+  const nav = useNavigate();
   const qc = useQueryClient();
-  const toast = useToast();
   const { data: perfiles = [], isLoading } = usePerfiles();
   const { data: areas = [] } = useAreas();
   const { data: membresias = [] } = useMembresias();
@@ -76,7 +77,7 @@ export default function Cuentas() {
           <h1 className="m-0 font-titulo text-[30px] font-bold text-vino">Cuentas</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Boton variante="secundario" onClick={() => toast({ titulo: 'Las fichas imprimibles llegan en la fase 2.', texto: 'Por ahora imprime la ficha al crear o reiniciar una cuenta.' })}>
+          <Boton variante="secundario" onClick={() => nav('/coach/fichas')}>
             <Icon name="imprimir" size={18} /> Imprimir fichas
           </Boton>
           <Boton onClick={() => document.getElementById('nc-nombre')?.focus()}><Icon name="mas" size={18} /> Nueva cuenta</Boton>
@@ -136,7 +137,7 @@ export default function Cuentas() {
                         <td className="border-b border-[#F0E4CC] px-2 py-3 text-sm">
                           {pestana === 'tutores' ? hijosDe(p.id) || '—' : (
                             <span className="flex flex-wrap gap-2">
-                              {misAreas.map((a) => <span key={a!.id} className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: a!.color }}><span className="h-2 w-2 rounded-full" style={{ background: a!.color }} />{a!.nombre}</span>)}
+                              {misAreas.map((a) => <span key={a!.id} className="texto-area inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: a!.color }}><span className="h-2 w-2 rounded-full" style={{ background: a!.color }} />{a!.nombre}</span>)}
                               {!misAreas.length && '—'}
                             </span>
                           )}
@@ -401,6 +402,7 @@ function Acciones({ perfil, onCerrar, alumnos, tutores, vinculos, puedeBorrar, o
 
 /** Fichas de acceso recién generadas: única vez que se ve la contraseña temporal. */
 function Fichas({ fichas, onCerrar }: { fichas: Ficha[] | null; onCerrar: () => void }) {
+  const nav = useNavigate();
   return (
     <Sheet abierto={!!fichas} onCerrar={onCerrar} titulo={fichas && fichas.length > 1 ? 'Fichas de acceso' : 'Ficha de acceso'}>
       <p className="m-0 text-[13px] text-tinta-2">Anótalas o imprímelas ahora: al cerrar esta ventana ya no se vuelven a ver.</p>
@@ -420,7 +422,7 @@ function Fichas({ fichas, onCerrar }: { fichas: Ficha[] | null; onCerrar: () => 
         ))}
       </div>
       <div className="flex gap-2">
-        <Boton variante="secundario" onClick={() => window.print()}><Icon name="imprimir" size={18} /> Imprimir</Boton>
+        <Boton variante="secundario" onClick={() => nav('/coach/fichas', { state: { fichas } })}><Icon name="imprimir" size={18} /> Imprimir</Boton>
         <Boton className="flex-grow" onClick={onCerrar}>Listo, ya las anoté</Boton>
       </div>
     </Sheet>

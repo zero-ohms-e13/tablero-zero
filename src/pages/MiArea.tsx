@@ -139,6 +139,9 @@ function VistaLider({ area, tareas, piden, porRevisar, equipo, responsables }: {
       </section>
 
       <section className="mx-4 mt-5 flex flex-col gap-2.5 pb-16">
+        <Link to={`/area/tablero/${area}`} className="flex min-h-tap items-center justify-center gap-2 rounded-campo border border-linea-campo bg-white text-sm font-semibold no-underline">
+          <Icon name="tablero" size={18} /> Ver el tablero completo (kanban)
+        </Link>
         <TituloSeccion extra="batería de la semana">Tu equipo</TituloSeccion>
         <div className="flex flex-col rounded-2xl border border-linea bg-white">
           {filas.map((f, i) => (

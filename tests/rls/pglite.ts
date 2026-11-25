@@ -18,6 +18,8 @@ create schema storage;
 create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
 create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid);
 alter table storage.objects enable row level security;
+-- Como Supabase: las funciones nuevas nacen ejecutables por anon/authenticated (un revoke posterior sí cuenta)
+alter default privileges in schema public grant execute on functions to anon, authenticated;
 `;
 
 const GRANTS = `
@@ -25,7 +27,6 @@ grant usage on schema public, auth, storage to anon, authenticated, service_role
 grant select, insert, update, delete on all tables in schema public to authenticated, service_role;
 grant select, insert, update, delete on storage.objects to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
-grant execute on all functions in schema public to anon, authenticated;
 grant execute on function auth.uid() to anon, authenticated;
 -- Solo para pruebas: ejecuta SQL y devuelve el mensaje de error (o null si pasó).
 create function public.tz_probar(q text) returns text language plpgsql as $$
@@ -93,7 +94,7 @@ insert into tarea_pasos (tarea_id, orden, texto) values ('${T.odometria}',1,'Med
 export async function crearBase() {
   const db = new PGlite();
   await db.exec(STUB);
-  for (const f of readdirSync(MIGRACIONES).filter((f) => f.endsWith('.sql')).sort()) {
+  for (const f of readdirSync(MIGRACIONES).filter((f) => f.endsWith('.sql') && !f.includes('solo_supabase')).sort()) {
     const sql = readFileSync(join(MIGRACIONES, f), 'utf8').replace(/create extension if not exists pgcrypto;/g, '');
     try {
       await db.exec(sql);

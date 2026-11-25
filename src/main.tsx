@@ -4,6 +4,9 @@ import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import './index.css';
+import { aplicarPrefs, leerPrefs } from './lib/preferencias';
+
+aplicarPrefs(leerPrefs());
 import App from './App';
 import { SesionProvider } from './lib/sesion';
 import { ToastProvider } from './components/ui';
