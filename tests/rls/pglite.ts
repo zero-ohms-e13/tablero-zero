@@ -16,7 +16,7 @@ create function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 create schema storage;
 create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
-create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid);
+create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid, metadata jsonb);
 alter table storage.objects enable row level security;
 -- Como Supabase: las funciones nuevas nacen ejecutables por anon/authenticated (un revoke posterior sí cuenta)
 alter default privileges in schema public grant execute on functions to anon, authenticated;
