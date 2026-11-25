@@ -21,7 +21,7 @@ type Ctx = {
 
 const SesionCtx = createContext<Ctx | null>(null);
 
-export type ErrorEntrar = { codigo: 'incorrecta' | 'bloqueada' | 'inactiva' | 'temporal_vencida' | 'red' | 'config'; restantes?: number };
+export type ErrorEntrar = { codigo: 'incorrecta' | 'bloqueada' | 'inactiva' | 'temporal_vencida' | 'red' | 'config' | 'servicio'; restantes?: number };
 
 export async function entrar(usuario: string, password: string, recordarme: boolean): Promise<ErrorEntrar | null> {
   recordar.set(recordarme);

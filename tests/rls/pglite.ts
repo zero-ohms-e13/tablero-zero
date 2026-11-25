@@ -121,5 +121,13 @@ export async function crearBase() {
     const [r] = await como<{ e: string | null }>(id, `select public.tz_probar($q$${sql}$q$) as e`);
     return r.e;
   }
-  return { db, como, falla };
+  // Como la Edge Function (service_role)
+  async function comoServicio<R = Record<string, unknown>>(sql: string) {
+    return db.transaction(async (tx) => {
+      await tx.exec(`set local role service_role;`);
+      const res = await tx.exec(sql);
+      return res[res.length - 1].rows as R[];
+    });
+  }
+  return { db, como, falla, comoServicio };
 }

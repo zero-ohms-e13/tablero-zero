@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
         if (error) throw new Error(error.message);
         const v = vence();
         await srv.from('profiles').update({ debe_cambiar_password: true, password_temporal_vence: v }).eq('id', id);
-        await srv.from('intentos_login').delete().eq('usuario', p.usuario);
+        await srv.rpc('desbloquear_usuario', { p_usuario: p.usuario }); // SEG-004: quita bloqueos en todos los orígenes
         await srv.from('solicitudes_reinicio').update({ atendida: true }).eq('usuario', p.usuario).eq('atendida', false);
         const ficha: Ficha = { usuario_id: id, usuario: p.usuario, password, nombre: p.nombre_visible, rol: p.rol_global, vence: v };
         return json(req, { fichas: [ficha] });
@@ -175,7 +175,8 @@ Deno.serve(async (req) => {
 
       // Usuarios bloqueados ahora por intentos fallidos (para mostrar "Bloqueada").
       case 'bloqueos': {
-        const { data } = await srv.from('intentos_login').select('usuario, bloqueado_hasta').gt('bloqueado_hasta', new Date().toISOString());
+        const { data, error } = await srv.rpc('usuarios_bloqueados');
+        if (error) throw new Error(error.message);
         return json(req, { bloqueos: data ?? [] });
       }
 
