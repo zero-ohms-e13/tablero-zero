@@ -8,7 +8,7 @@ import { Avatar, Boton, Cargando, EmptyState, HeaderVino, PantallaCel, Sheet, Ti
 import { esMia, useAreas, useAvanceMetas, useCompetencias, useMetas, useMoverEstado, usePedirAyuda, usePerfiles, useTareas } from '../lib/datos';
 import { agruparSemana, diasHasta, esHoy, haceCuanto, vencida } from '../lib/fechas';
 import { useSesion } from '../lib/sesion';
-import { lunesDe, plazoTexto, useBitacorasSemana, usePlazoBitacora } from '../lib/bitacoras';
+import { lunesDe, plazoTexto, useBitacorasSemana, useMisBitacoras, usePlazoBitacora } from '../lib/bitacoras';
 import { supabase } from '../lib/supabase';
 import { ROBOT_NOMBRE, type Tarea } from '../lib/tipos';
 
@@ -259,10 +259,11 @@ function TarjetaBitacora({ alumno }: { alumno?: string }) {
   const lunes = lunesDe();
   const { data: lista = [], isLoading } = useBitacorasSemana(alumno, lunes);
   const { data: vence = new Date() } = usePlazoBitacora(lunes);
+  const { data: todas = [] } = useMisBitacoras(alumno);
+  const nBorradores = todas.filter((b) => b.estado === 'borrador').length;
   if (isLoading) return null;
   const entregadas = lista.filter((b) => b.estado === 'entregada' || b.estado === 'revisada').length;
   const corregir = lista.some((b) => b.estado === 'devuelta');
-  const borrador = lista.some((b) => b.estado === 'borrador');
   const listo = entregadas > 0 && !corregir;
   const plazo = plazoTexto(vence);
   return (
@@ -276,7 +277,7 @@ function TarjetaBitacora({ alumno }: { alumno?: string }) {
       <span className="flex min-w-0 flex-grow flex-col">
         <strong className="text-[15px] text-vino">Mis bitácoras de la semana</strong>
         <span className={`text-xs ${!listo && plazo.tono !== 'normal' ? 'font-semibold text-urgente' : 'text-tinta-2'}`}>
-          {corregir ? 'El coach te pidió corregir una' : listo ? `${entregadas} entregada${entregadas > 1 ? 's' : ''} · puedes agregar otra` : `${borrador ? 'Tienes un borrador · ' : ''}${plazo.texto}`}
+          {corregir ? 'El coach te pidió corregir una' : listo ? `${entregadas} entregada${entregadas > 1 ? 's' : ''}${nBorradores ? ` · ${nBorradores} borrador${nBorradores > 1 ? 'es' : ''}` : ' · puedes agregar otra'}` : `${nBorradores ? `${nBorradores} borrador${nBorradores > 1 ? 'es' : ''} · ` : ''}${plazo.texto}`}
         </span>
       </span>
       <Icon name="atras" size={18} className="shrink-0 rotate-180 text-vino" />

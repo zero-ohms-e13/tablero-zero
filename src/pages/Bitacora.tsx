@@ -52,13 +52,21 @@ export default function Bitacora() {
   const plazo = plazoTexto(vence);
   const entregadas = lista.filter((b) => b.estado === 'entregada' || b.estado === 'revisada');
   // Bitácoras nuevas que solo existen en este teléfono (se escribieron sin conexión y no llegaron al servidor)
-  const locales = uid
+  const enServidor = new Set([...(hist.data ?? []).map((h) => h.id), ...lista.map((b) => b.id)]);
+  const localesTodas = uid
     ? respaldo
         .listar<Respaldo>(uid, 'bitacora.')
         // El id de la bitácora va en el nombre del respaldo (bitacora.<id>); valor.id es el de la edición
         .map((x) => ({ ...x.valor, id: x.nombre.slice('bitacora.'.length) }))
-        .filter((v) => v.semana === lunes && !lista.some((b) => b.id === v.id))
+        .filter((v) => v.semana && !enServidor.has(v.id))
     : [];
+  const locales = localesTodas.filter((v) => v.semana === lunes);
+  // Borradores: todo lo que aún no se entrega, de cualquier semana (para retomarlo cuando quieras)
+  const borradores = [
+    ...(hist.data ?? []).filter((h) => h.estado === 'borrador' || h.estado === 'devuelta')
+      .map((h) => ({ id: h.id, semana: h.semana, fecha: h.fecha, resumen: h.aporte, devuelta: h.estado === 'devuelta', local: false, at: h.actualizado_at })),
+    ...localesTodas.map((l) => ({ id: l.id, semana: l.semana, fecha: l.fecha, resumen: l.d.aporte, devuelta: false, local: true, at: new Date(l.at).toISOString() })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
   const salirEditor = useRef<(() => Promise<boolean>) | null>(null);
   const toastP = useToast();
   // Moverse dentro de la bitácora espera a que se confirme el guardado; si falla, se queda aquí
@@ -141,6 +149,25 @@ export default function Bitacora() {
               {abierta && <span className={`text-xs ${plazo.tono === 'normal' ? 'text-tinta-2' : 'font-semibold text-urgente'}`}>{plazo.texto}</span>}
             </div>
             <p className="m-0 text-xs text-tinta-2">Puedes entregar una por cada día de taller; con una entregada cumples la semana.</p>
+            {borradores.length > 0 && (
+              <section aria-label="Borradores" className="flex flex-col gap-2 rounded-tarjeta border border-linea bg-kanban p-3">
+                <div className="flex flex-col">
+                  <strong className="text-[15px] text-vino">Borradores · {borradores.length}</strong>
+                  <span className="text-xs text-tinta-3">Se guardan solos, aunque cierres la app o te quedes sin señal. Retómalos cuando quieras.</span>
+                </div>
+                {borradores.map((x) => (
+                  <button key={x.id} type="button" onClick={() => void ir({ semana: x.semana, id: x.id })} className={`flex min-h-tap w-full items-center gap-3 rounded-campo border bg-white p-2.5 text-left ${x.devuelta || x.local ? 'border-2 border-ambar' : 'border-linea'}`}>
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-crema text-vino"><Icon name={x.local ? 'sinred' : 'editar'} size={16} /></span>
+                    <span className="flex min-w-0 flex-grow flex-col">
+                      <strong className="text-sm text-tinta">Bitácora del {diaBitacora(x.fecha)}</strong>
+                      <span className={`truncate text-xs ${x.local || x.devuelta ? 'text-urgente' : 'text-tinta-3'}`}>
+                        {x.local ? 'Solo está en este teléfono: ábrela para guardarla' : x.devuelta ? 'El coach te pidió corregirla' : `${x.resumen.trim() || 'Sin escribir todavía'} · guardado ${haceCuanto(x.at)}`}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </section>
+            )}
             {lista.length === 0 && locales.length === 0 && (
               <p className="m-0 text-sm text-tinta-3">{abierta ? 'Todavía no escribes ninguna esta semana.' : 'No escribiste bitácoras esta semana.'}</p>
             )}

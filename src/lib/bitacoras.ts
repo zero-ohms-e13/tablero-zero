@@ -84,8 +84,8 @@ export const useMisBitacoras = (alumno: string | undefined) =>
     queryKey: ['bitacoras', alumno],
     enabled: !!alumno,
     queryFn: async () =>
-      ok(await supabase.from('bitacoras').select('id, semana, estado, primera_entrega_at, retro').eq('alumno_id', alumno!).order('semana', { ascending: false }).limit(20)) as
-        Pick<Bitacora, 'id' | 'semana' | 'estado' | 'primera_entrega_at' | 'retro'>[],
+      ok(await supabase.from('bitacoras').select('id, fecha, semana, estado, aporte, actualizado_at, primera_entrega_at, retro').eq('alumno_id', alumno!).order('semana', { ascending: false }).limit(200)) as
+        Pick<Bitacora, 'id' | 'fecha' | 'semana' | 'estado' | 'aporte' | 'actualizado_at' | 'primera_entrega_at' | 'retro'>[],
   });
 
 export function useGuardarBitacora() {
@@ -96,7 +96,7 @@ export function useGuardarBitacora() {
     // Marca la copia en memoria como vieja (sin recargar ahora): al volver a esa semana se trae la versión guardada
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bitacoras_semana'], refetchType: 'none' });
-      qc.invalidateQueries({ queryKey: ['bitacoras'], refetchType: 'none' });
+      qc.invalidateQueries({ queryKey: ['bitacoras'] }); // la lista de borradores no alimenta al editor: se recarga ya
     },
   });
 }
