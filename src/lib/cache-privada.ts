@@ -113,6 +113,14 @@ export const respaldo = {
       /* sin espacio o sin almacenamiento: se sigue sin respaldo */
     }
   },
+  /** Borra el respaldo solo si sigue siendo el que se confirmó (`id`): si otra pestaña escribió uno más
+   *  nuevo mientras tanto, se conserva. Devuelve true si lo borró. */
+  borrarSiEs(uid: string, nombre: string, id: string): boolean {
+    const actualR = respaldo.leer<{ id?: string }>(uid, nombre);
+    if (!actualR || actualR.id !== id) return false;
+    respaldo.borrar(uid, nombre);
+    return true;
+  },
   borrar(uid: string, nombre: string) {
     try {
       almacen()?.removeItem(RESPALDO + uid + '.' + nombre);

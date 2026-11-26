@@ -118,7 +118,7 @@ export default function Bitacora() {
 // ---------- Editor con guardado automático ----------
 type EstadoGuardado = 'guardado' | 'cambios' | 'guardando' | 'error' | 'conflicto';
 
-type Respaldo = { d: DatosBitacora; version: number; at: number };
+type Respaldo = { id: string; d: DatosBitacora; version: number; at: number };
 
 function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inicial: TBitacora | null; onRecargar: () => Promise<void>; salirRef: { current: (() => Promise<boolean>) | null } }) {
   const { perfil: yo } = useSesion();
@@ -143,6 +143,7 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
   const ultimo = useRef(d);
   ultimo.current = d;
   const sucio = useRef(!!recuperado); // hay algo escrito que no ha llegado al servidor
+  const idRespaldo = useRef<{ datos: DatosBitacora; id: string } | null>(recuperado ? { datos: recuperado.d, id: recuperado.id } : null);
   const cambiar = (p: Partial<DatosBitacora>) => {
     setD((x) => ({ ...x, ...p }));
     sucio.current = true;
@@ -156,11 +157,13 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
       setEstado('guardando');
       try {
         const enviado = ultimo.current;
+        const respaldoEnviado = idRespaldo.current?.datos === enviado ? idRespaldo.current.id : null;
         const r = await guardarRpc({ lunes, version: servidor.current.version, datos: enviado });
         servidor.current = { id: r.id, version: r.version };
         if (ultimo.current === enviado) {
           sucio.current = false; // si escribió mientras guardaba, sigue pendiente
-          if (uid) respaldo.borrar(uid, clave);
+          // Solo si el respaldo guardado es justo lo que se confirmó (otra pestaña pudo escribir uno más nuevo)
+          if (uid && respaldoEnviado) respaldo.borrarSiEs(uid, clave, respaldoEnviado);
         }
         setEstado((e) => (e === 'guardando' ? 'guardado' : e));
         setError(null);
@@ -180,7 +183,10 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
 
   // Respaldo local de lo escrito mientras no llegue al servidor
   useEffect(() => {
-    if (sucio.current && uid) respaldo.guardar(uid, clave, { d, version: servidor.current.version, at: Date.now() } satisfies Respaldo);
+    if (!sucio.current || !uid) return;
+    const id = crypto.randomUUID();
+    idRespaldo.current = { datos: d, id };
+    respaldo.guardar(uid, clave, { id, d, version: servidor.current.version, at: Date.now() } satisfies Respaldo);
   }, [d, uid, clave]);
 
   // La página pide salir: espera a que se confirme el guardado (true) o avisa que falló (false)

@@ -124,6 +124,19 @@ describe('Bitácora · respaldo local del texto sin guardar', () => {
     expect(respaldo.leer('A', 'bitacora.2026-11-23')).toBeNull();
   });
 
+  it('dos pestañas: una confirmación tardía no borra el respaldo más nuevo de la otra', async () => {
+    await activarCacheDe(qc, 'A');
+    respaldo.guardar('A', 'bitacora.2026-11-23', { id: 'pestana-1', d: 'texto viejo' });
+    // La otra pestaña escribe después un respaldo más nuevo
+    respaldo.guardar('A', 'bitacora.2026-11-23', { id: 'pestana-2', d: 'texto más nuevo' });
+    // Llega tarde la confirmación del guardado de la pestaña 1: no debe borrar el de la pestaña 2
+    expect(respaldo.borrarSiEs('A', 'bitacora.2026-11-23', 'pestana-1')).toBe(false);
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toEqual({ id: 'pestana-2', d: 'texto más nuevo' });
+    // Al reabrir se recupera el más nuevo; solo su propia confirmación lo borra
+    expect(respaldo.borrarSiEs('A', 'bitacora.2026-11-23', 'pestana-2')).toBe(true);
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toBeNull();
+  });
+
   it('si la app abre sin sesión, no queda ningún respaldo', () => {
     ls.setItem(RESPALDO + 'A.bitacora.2026-11-23', '{}');
     borrarRespaldos();
