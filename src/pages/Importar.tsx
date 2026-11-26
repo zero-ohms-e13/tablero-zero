@@ -9,7 +9,7 @@ import { Icon } from '../components/Icon';
 import { Boton, Cargando, EmptyState, Sheet, useToast } from '../components/ui';
 import { Fichas } from './Cuentas';
 import { admin, type Ficha } from '../lib/datos';
-import { COLUMNAS, PESTANAS, conteo, filasDe, idEstable, pestanaDe, revisar, type Existentes, type Hoja, type Plan } from '../lib/importar';
+import { COLUMNAS, PESTANAS, conteo, filasDe, idEstable, pestanaDe, revisar, type AltaPrevia, type Existentes, type Hoja, type OpcionesRevision, type Plan } from '../lib/importar';
 import { ejecutar, type Avance, type CuentaCreada, type Resultado } from '../lib/importar-ejecutar';
 import { useSesion } from '../lib/sesion';
 import { supabase } from '../lib/supabase';
@@ -26,6 +26,15 @@ async function leerExistentes(): Promise<Existentes> {
   if (e) throw new Error(e.message);
   return { areas: a.data!, perfiles: p.data!, membresias: m.data!, tutorias: t.data!, tareas: ta.data! };
 }
+
+const OPCIONES: OpcionesRevision = {
+  coachPrincipal: true,
+  altasPrevias: async (solicitudes) => {
+    const { data, error } = await supabase.rpc('altas_previas', { p_solicitudes: solicitudes });
+    if (error) throw new Error(error.message);
+    return Object.fromEntries((data as { solicitud_id: string; resultado: AltaPrevia[] | null }[]).map((x) => [x.solicitud_id, x.resultado ?? []]));
+  },
+};
 
 const EJEMPLO: Record<keyof Hoja, string[][]> = {
   areas: [['PROG', 'Programación', 'Código y autonomía'], ['MEC', 'Mecánica', '']],
@@ -84,7 +93,7 @@ export default function Importar() {
       if (!reconocidas.length) throw new Error('No encontré pestañas Áreas, Cuentas, Asignaciones, Tutorías ni Tareas. Usa la plantilla.');
       setArchivo(f.name);
       setHoja(h);
-      setPlan(await revisar(h, await leerExistentes(), { coachPrincipal: true }));
+      setPlan(await revisar(h, await leerExistentes(), OPCIONES));
     } catch (e) {
       setError((e as Error).message.includes('zip') ? 'El archivo no es un Excel (.xlsx). En Google Sheets: Archivo → Descargar → Microsoft Excel.' : (e as Error).message);
       setPlan(null);
@@ -95,7 +104,7 @@ export default function Importar() {
 
   async function revisarOtraVez() {
     if (!hoja) return;
-    setPlan(await revisar(hoja, await leerExistentes(), { coachPrincipal: true }));
+    setPlan(await revisar(hoja, await leerExistentes(), OPCIONES));
   }
 
   async function cargar() {
@@ -107,6 +116,11 @@ export default function Importar() {
       const r = await ejecutar(plan, {
         crearArea: async (a) => {
           const { data, error: e } = await supabase.from('areas').insert(a).select('id').single();
+          if (e?.code === '23505') {
+            // Otra pestaña la creó al mismo tiempo (el nombre es único): se usa esa
+            const { data: ya } = await supabase.from('areas').select('id').eq('nombre', a.nombre).maybeSingle();
+            if (ya?.id) return ya.id as string;
+          }
           if (e || !data?.id) throw new Error(e?.message ?? 'No se pudo crear el área.');
           return data.id as string;
         },

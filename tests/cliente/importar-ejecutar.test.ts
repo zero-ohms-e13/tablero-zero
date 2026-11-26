@@ -1,6 +1,6 @@
 // Importar datos · ejecución por etapas con dependencias simuladas (sin red, datos ficticios).
 import { describe, expect, it } from 'vitest';
-import { revisar, type Existentes, type Hoja } from '../../src/lib/importar';
+import { revisar, type AltaPrevia, type Existentes, type Hoja } from '../../src/lib/importar';
 import { ejecutar, type Deps } from '../../src/lib/importar-ejecutar';
 
 const hoja: Hoja = {
@@ -23,7 +23,7 @@ const hoja: Hoja = {
 };
 
 /** Base simulada: guarda lo que se crea y responde como la app (admin-accounts devuelve fichas). */
-function base(fallar: { cuenta?: string; tarea?: string; registro?: string; ocupar?: string } = {}) {
+function base(fallar: { cuenta?: string; tarea?: string; registro?: string; ocupar?: string; perder?: string } = {}) {
   const db: Existentes = { areas: [{ id: 'a-prog', nombre: 'Programación' }], perfiles: [], membresias: [], tutorias: [], tareas: [] };
   const llamadas: string[] = [];
   const solicitudes = new Map<string, { usuario_id: string; usuario: string; rol: string }>(); // idempotencia de admin-accounts
@@ -53,6 +53,7 @@ function base(fallar: { cuenta?: string; tarea?: string; registro?: string; ocup
       for (const m of (c.membresias as { area_id: string; es_lider: boolean }[]) ?? []) db.membresias.push({ usuario_id: id, ...m });
       if (c.alumno_id) db.tutorias.push({ tutor_id: id, alumno_id: String(c.alumno_id) });
       solicitudes.set(sol, { usuario_id: id, usuario, rol: String(c.rol) });
+      if (fallar.perder === String(c.usuario)) { fallar.perder = undefined; throw new Error('Failed to fetch (simulado)'); }
       return { fichas: [{ usuario_id: id, usuario, password: 'cobre-123', nombre: String(c.nombre), rol: String(c.rol), vence: '2026-12-02' }] };
     },
     asignar: async (u, a, l) => {
@@ -77,7 +78,12 @@ function base(fallar: { cuenta?: string; tarea?: string; registro?: string; ocup
       expect(JSON.stringify(resumen)).not.toMatch(/cobre-123|password/); // nunca contraseñas en el registro
     },
   };
-  return { db, deps, llamadas, registros, responsablesDe };
+  const altasPrevias = async (ids: string[]) => {
+    const r: Record<string, AltaPrevia[]> = {};
+    for (const id of ids) if (solicitudes.has(id)) r[id] = [solicitudes.get(id)!];
+    return r;
+  };
+  return { db, deps, llamadas, registros, responsablesDe, altasPrevias };
 }
 
 describe('Importar · ejecución por etapas', async () => {
@@ -174,5 +180,36 @@ describe('Importar · ejecución por etapas', async () => {
     const ultimo = registros.at(-1) as { fallos: string[] };
     expect(ultimo.fallos).toEqual(['tareas:TAR-02:conflicto']);
     expect(JSON.stringify(registros)).not.toMatch(/simulado/);
+  });
+
+  it('reanudar de verdad: usuario ajustado, respuesta perdida, se cierra la app y se vuelve a subir la hoja', async () => {
+    const { db, deps, responsablesDe, altasPrevias } = base({ ocupar: 'diego.p', perder: 'diego.p' });
+    const r1 = await ejecutar(await revisar(hoja, await deps.existentes()), deps);
+    expect(r1.fallos.map((f) => f.clave)).toContain('ALU-01');
+    // Nueva sesión: se reconstruye el plan desde cero con lo que hay en la base
+    const plan = await revisar(hoja, await deps.existentes(), { coachPrincipal: true, altasPrevias });
+    expect(plan.bloquea).toBe(false);
+    const nuestro = db.perfiles.find((p) => p.usuario === 'diego.p2')!.id;
+    expect(plan.cuentas[0]).toMatchObject({ estado: 'existente', id: nuestro });
+    const antes = db.perfiles.length;
+    const r2 = await ejecutar(plan, deps);
+    expect(r2.fallos).toEqual([]);
+    expect(db.perfiles).toHaveLength(antes); // el tutor ya se creó con Ana en el primer intento: nada nuevo
+    expect(responsablesDe.get('Armar el chasis')).toContain(nuestro);
+    expect(db.tutorias).toContainEqual(expect.objectContaining({ alumno_id: nuestro }));
+    expect(db.membresias.some((m) => m.usuario_id === 'p-ajena')).toBe(false);
+  });
+
+  it('si falla la relectura tras un alta, el resultado parcial y las fichas siguen visibles', async () => {
+    const { deps } = base();
+    let lecturas = 0;
+    const leer = deps.existentes;
+    deps.existentes = async () => {
+      if (++lecturas > 1) throw new Error('Failed to fetch (simulado)');
+      return leer();
+    };
+    const r = await ejecutar(await revisar(hoja, await leer()), deps);
+    expect(r.fichas.map((f) => f.usuario).sort()).toEqual(['ana.l', 'diego.p', 'tutor.diego.p']);
+    expect(r.creados.tareas).toHaveLength(2);
   });
 });

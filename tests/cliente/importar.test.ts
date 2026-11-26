@@ -1,6 +1,6 @@
 // Importar datos · revisor de la hoja (puro, sin red, datos ficticios).
 import { describe, expect, it } from 'vitest';
-import { conteo, fechaLimite, filasDe, idEstable, pestanaDe, revisar, type Existentes, type Hoja } from '../../src/lib/importar';
+import { conteo, fechaLimite, filasDe, idEstable, pestanaDe, revisar, solicitudCuenta, type Existentes, type Hoja } from '../../src/lib/importar';
 
 const vacio: Existentes = { areas: [], perfiles: [], membresias: [], tutorias: [], tareas: [] };
 const conApp: Existentes = {
@@ -176,5 +176,21 @@ describe('Importar · revisor', async () => {
     expect(p.tareas[0].fecha_limite).toBe('2026-12-06T05:59:00.000Z');
     expect(p.problemas.map((x) => x.mensaje).join(' ')).toMatch(/vence a las 23:59/);
     expect(p.bloquea).toBe(false);
+  });
+
+  it('reanudar: si la solicitud de la fila ya se completó, se usa esa cuenta aunque el usuario se haya ajustado', async () => {
+    const ex: Existentes = { ...conApp, perfiles: [
+      ...conApp.perfiles,
+      { id: 'p-ajena', usuario: 'diego.p', nombre_visible: 'Diego Paz', rol_global: 'alumno', activo: true },
+      { id: 'p-nuestro', usuario: 'diego.p2', nombre_visible: 'Diego Pérez', rol_global: 'alumno', activo: true },
+    ] };
+    const h = hoja({ cuentas: [{ clave_persona: 'ALU-01', nombre_visible: 'Diego Pérez', usuario_deseado: '', rol: 'alumno' }], tutorias: [], tareas: [] });
+    const sin = await revisar(h, ex);
+    expect(sin.bloquea).toBe(true); // sin consultar al servidor, diego.p es de otra persona
+    const sol = await solicitudCuenta({ clave: 'ALU-01', usuario: 'diego.p', nombre: 'Diego Pérez' });
+    const con = await revisar(h, ex, { coachPrincipal: true, altasPrevias: async (ids) => (ids.includes(sol) ? { [sol]: [{ usuario_id: 'p-nuestro', usuario: 'diego.p2', rol: 'alumno' }] } : {}) });
+    expect(con.bloquea).toBe(false);
+    expect(con.cuentas[0]).toMatchObject({ estado: 'existente', id: 'p-nuestro' });
+    expect(con.problemas.map((x) => x.mensaje).join(' ')).toMatch(/carga anterior como diego\.p2/);
   });
 });

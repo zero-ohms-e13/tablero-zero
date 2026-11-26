@@ -18,6 +18,13 @@ export type EstadoFila = 'nueva' | 'existente' | 'cambio' | 'conflicto' | 'inval
 export type Problema = { hoja: NombreHoja; fila: number; mensaje: string; grave: boolean };
 export type NombreHoja = 'Áreas' | 'Cuentas' | 'Asignaciones' | 'Tutorías' | 'Tareas';
 export type RolCuenta = 'alumno' | 'tutor' | 'coach_aux';
+/** Cuenta que admin-accounts ya creó con esa solicitud (respuesta guardada en el servidor, sin contraseña). */
+export type AltaPrevia = { usuario_id: string; usuario: string; rol: string };
+export type OpcionesRevision = {
+  coachPrincipal: boolean;
+  /** Busca altas ya completadas por solicitud (para reanudar una carga cuya respuesta se perdió). */
+  altasPrevias?: (solicitudes: string[]) => Promise<Record<string, AltaPrevia[]>>;
+};
 
 export type AreaPlan = { fila: number; clave: string; nombre: string; estado: EstadoFila; id?: string };
 export type CuentaPlan = {
@@ -111,9 +118,17 @@ export function fechaLimite(v: string): string | null | 'invalida' {
   return new Date(Date.UTC(a, mes - 1, d, h + 6, mi)).toISOString(); // Mérida = UTC-6
 }
 
-export async function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrincipal: boolean } = { coachPrincipal: true }): Promise<Plan> {
-  const problemas: Problema[] = [];
-  const mal = (h: NombreHoja, fila: number, mensaje: string, grave = true) => problemas.push({ hoja: h, fila, mensaje, grave });
+/** Id estable de la solicitud de alta de una fila de Cuentas (el mismo en la revisión y en la carga). */
+export const solicitudCuenta = (c: { clave: string; usuario: string; nombre: string }) => idEstable(`cuenta|${c.clave.toUpperCase()}|${c.usuario}|${c.nombre}`);
+
+export async function revisar(hoja: Hoja, ex: Existentes, opciones: OpcionesRevision = { coachPrincipal: true }): Promise<Plan> {
+  let problemas: Problema[] = [];
+  const mal = (h: NombreHoja, fila: number, mensaje: string, grave = true) => {
+    const p = { hoja: h, fila, mensaje, grave };
+    problemas.push(p);
+    return p;
+  };
+  const deIdentidad = new Map<CuentaPlan, Problema[]>(); // problemas que se resuelven si la solicitud ya se completó
   const nFila = (i: number) => i + 2; // fila de la hoja (1 = encabezados)
 
   // --- Áreas ---
@@ -182,6 +197,7 @@ export async function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrinc
       mal('Cuentas', fila, 'Solo el coach principal da de alta mentores.');
       estado = 'invalida';
     }
+    const identidad: Problema[] = [];
     let usuario = (f.usuario_deseado ?? '').toLowerCase();
     if (!usuario && nombre.length >= 2) usuario = usuarioDesdeNombre(nombre);
     if (rol === 'tutor' && usuario && !usuario.startsWith('tutor.')) usuario = `tutor.${usuario}`;
@@ -196,29 +212,47 @@ export async function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrinc
     const ya = ex.perfiles.find((p) => p.usuario === usuario);
     if (ya && estado === 'nueva') {
       if (ya.rol_global !== rol) {
-        mal('Cuentas', fila, `Ya existe la cuenta ${usuario} pero con rol ${ya.rol_global}; aquí dice ${f.rol}. Si es otra persona, ponle otro usuario_deseado.`);
+        identidad.push(mal('Cuentas', fila, `Ya existe la cuenta ${usuario} pero con rol ${ya.rol_global}; aquí dice ${f.rol}. Si es otra persona, ponle otro usuario_deseado.`));
         estado = 'conflicto';
       } else if (normal(ya.nombre_visible) !== normal(nombre)) {
         // Mismo usuario y rol pero otro nombre: puede ser otra persona. No se vincula sin que el coach lo decida.
-        mal('Cuentas', fila, `El usuario ${usuario} ya es de «${ya.nombre_visible}». Si es la misma persona, copia ese nombre tal cual; si es otra, ponle otro usuario_deseado.`);
+        identidad.push(mal('Cuentas', fila, `El usuario ${usuario} ya es de «${ya.nombre_visible}». Si es la misma persona, copia ese nombre tal cual; si es otra, ponle otro usuario_deseado.`));
         estado = 'conflicto';
       } else {
         estado = 'existente';
-        mal('Cuentas', fila, `Se usará la cuenta que ya existe: ${usuario} (${ya.nombre_visible}).`, false);
+        identidad.push(mal('Cuentas', fila, `Se usará la cuenta que ya existe: ${usuario} (${ya.nombre_visible}).`, false));
         if (!ya.activo) mal('Cuentas', fila, `La cuenta ${usuario} está desactivada; actívala en Cuentas si sigue en el equipo.`, false);
       }
     } else if (!ya && estado === 'nueva') {
       // Mismo nombre y rol con otro usuario: probablemente la misma persona (evita cuentas duplicadas)
       const homonimo = ex.perfiles.find((p) => p.rol_global === rol && normal(p.nombre_visible) === normal(nombre));
       if (homonimo) {
-        mal('Cuentas', fila, `Ya hay una cuenta de ${rol === 'coach_aux' ? 'mentor' : rol} llamada «${homonimo.nombre_visible}» (${homonimo.usuario}). Si es la misma persona, pon usuario_deseado ${homonimo.usuario}; si es otra, distingue el nombre visible.`);
+        identidad.push(mal('Cuentas', fila, `Ya hay una cuenta de ${rol === 'coach_aux' ? 'mentor' : rol} llamada «${homonimo.nombre_visible}» (${homonimo.usuario}). Si es la misma persona, pon usuario_deseado ${homonimo.usuario}; si es otra, distingue el nombre visible.`));
         estado = 'conflicto';
       }
     }
     const plan: CuentaPlan = { fila, clave: c, nombre, usuario, rol: rol ?? 'alumno', estado, id: estado === 'existente' ? ya?.id : undefined, membresias: [] };
     cuentas.push(plan);
+    deIdentidad.set(plan, identidad);
     if (CLAVE_RE.test(c) && !porClavePersona.has(c.toUpperCase())) porClavePersona.set(c.toUpperCase(), plan);
   });
+  // Reanudar: si la solicitud de esta fila ya se completó (aunque la respuesta se haya perdido o el servidor
+  // haya ajustado el usuario), la cuenta es ESA, por su id. Esto manda sobre usuario y nombre.
+  if (opciones.altasPrevias) {
+    const candidatas = cuentas.filter((p) => p.rol && p.usuario && CLAVE_RE.test(p.clave) && p.estado !== 'invalida');
+    const ids = await Promise.all(candidatas.map((p) => solicitudCuenta(p)));
+    const previas = ids.length ? await opciones.altasPrevias(ids) : {};
+    candidatas.forEach((p, i) => {
+      const alta = previas[ids[i]]?.find((x) => x.rol === p.rol);
+      if (!alta) return;
+      const quitar = new Set(deIdentidad.get(p));
+      problemas = problemas.filter((x) => !quitar.has(x));
+      p.estado = 'existente';
+      p.id = alta.usuario_id;
+      mal('Cuentas', p.fila, `Ya se creó en una carga anterior como ${alta.usuario}: se usa esa cuenta.`, false);
+    });
+  }
+
   const persona = (c: string) => {
     const p = porClavePersona.get(c.toUpperCase());
     return p && (p.estado === 'nueva' || p.estado === 'existente') ? p : null;
