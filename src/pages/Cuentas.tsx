@@ -418,7 +418,7 @@ function Acciones({ perfil, onCerrar, alumnos, tutores, vinculos, puedeBorrar, o
 }
 
 /** Fichas de acceso recién generadas: única vez que se ve la contraseña temporal. */
-function Fichas({ fichas, onCerrar }: { fichas: Ficha[] | null; onCerrar: () => void }) {
+export function Fichas({ fichas, onCerrar }: { fichas: Ficha[] | null; onCerrar: () => void }) {
   const nav = useNavigate();
   return (
     <Sheet abierto={!!fichas} onCerrar={onCerrar} titulo={fichas && fichas.length > 1 ? 'Fichas de acceso' : 'Ficha de acceso'}>
