@@ -14,7 +14,7 @@ class Almacen {
 const ls = new Almacen();
 (globalThis as unknown as { window: unknown }).window = { localStorage: ls };
 
-const { activarCacheDe, cerrarCache, limpiarCopias, PREFIJO } = await import('../../src/lib/cache-privada');
+const { activarCacheDe, borrarRespaldos, cerrarCache, limpiarCopias, PREFIJO, RESPALDO, respaldo } = await import('../../src/lib/cache-privada');
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let qc: QueryClient;
@@ -99,5 +99,57 @@ describe('SEG-003 · caché aislada por usuario', () => {
     expect(ls.getItem('tz.cache')).toBeNull();
     expect(ls.getItem('tz.cache.dueno')).toBeNull();
     expect(ls.getItem('tz.prefs')).toBe('{}'); // preferencias del dispositivo se quedan
+  });
+});
+
+describe('Bitácora · respaldo local del texto sin guardar', () => {
+  it('se guarda solo para el usuario activo, sobrevive a recargar y se borra al cerrar sesión', async () => {
+    await activarCacheDe(qc, 'A');
+    respaldo.guardar('A', 'bitacora.2026-11-23', { d: 'texto de A' });
+    respaldo.guardar('B', 'bitacora.2026-11-23', { d: 'no debe escribirse' });
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toEqual({ d: 'texto de A' });
+    expect(ls.getItem(RESPALDO + 'B.bitacora.2026-11-23')).toBeNull();
+    // Recargar la app: al arrancar se limpia sin saber quién es (no toca respaldos) y luego se activa A
+    limpiarCopias();
+    limpiarCopias('A');
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toEqual({ d: 'texto de A' });
+    await cerrarCache(qc);
+    expect(ls.getItem(RESPALDO + 'A.bitacora.2026-11-23')).toBeNull();
+  });
+
+  it('al entrar otra cuenta en el mismo teléfono, el respaldo del anterior desaparece', async () => {
+    ls.setItem(RESPALDO + 'A.bitacora.2026-11-23', JSON.stringify({ d: 'texto de A' }));
+    await activarCacheDe(qc, 'B');
+    expect(ls.getItem(RESPALDO + 'A.bitacora.2026-11-23')).toBeNull();
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toBeNull();
+  });
+
+  it('dos pestañas: una confirmación tardía no borra el respaldo más nuevo de la otra', async () => {
+    await activarCacheDe(qc, 'A');
+    respaldo.guardar('A', 'bitacora.2026-11-23', { id: 'pestana-1', d: 'texto viejo' });
+    // La otra pestaña escribe después un respaldo más nuevo
+    respaldo.guardar('A', 'bitacora.2026-11-23', { id: 'pestana-2', d: 'texto más nuevo' });
+    // Llega tarde la confirmación del guardado de la pestaña 1: no debe borrar el de la pestaña 2
+    expect(respaldo.borrarSiEs('A', 'bitacora.2026-11-23', 'pestana-1')).toBe(false);
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toEqual({ id: 'pestana-2', d: 'texto más nuevo' });
+    // Al reabrir se recupera el más nuevo; solo su propia confirmación lo borra
+    expect(respaldo.borrarSiEs('A', 'bitacora.2026-11-23', 'pestana-2')).toBe(true);
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toBeNull();
+  });
+
+  it('lista solo los respaldos del usuario activo con el prefijo pedido (bitácoras nuevas sin guardar)', async () => {
+    await activarCacheDe(qc, 'A');
+    respaldo.guardar('A', 'bitacora.id-1', { semana: '2026-11-23' });
+    respaldo.guardar('A', 'otro.id-2', { x: 1 });
+    ls.setItem(RESPALDO + 'B.bitacora.id-3', '{}');
+    expect(respaldo.listar('A', 'bitacora.')).toEqual([{ nombre: 'bitacora.id-1', valor: { semana: '2026-11-23' } }]);
+    expect(respaldo.listar('B', 'bitacora.')).toEqual([]); // B no es el usuario activo
+  });
+
+  it('si la app abre sin sesión, no queda ningún respaldo', () => {
+    ls.setItem(RESPALDO + 'A.bitacora.2026-11-23', '{}');
+    borrarRespaldos();
+    expect(ls.getItem(RESPALDO + 'A.bitacora.2026-11-23')).toBeNull();
+    expect(PREFIJO).not.toBe(RESPALDO);
   });
 });

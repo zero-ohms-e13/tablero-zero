@@ -8,6 +8,7 @@ import { Avatar, Boton, Cargando, EmptyState, HeaderVino, PantallaCel, Sheet, Ti
 import { esMia, useAreas, useAvanceMetas, useCompetencias, useMetas, useMoverEstado, usePedirAyuda, usePerfiles, useTareas } from '../lib/datos';
 import { agruparSemana, diasHasta, esHoy, haceCuanto, vencida } from '../lib/fechas';
 import { useSesion } from '../lib/sesion';
+import { lunesDe, plazoTexto, useBitacorasSemana, useMisBitacoras, usePlazoBitacora } from '../lib/bitacoras';
 import { supabase } from '../lib/supabase';
 import { ROBOT_NOMBRE, type Tarea } from '../lib/tipos';
 
@@ -126,6 +127,8 @@ export default function MiTablero() {
       <div className="mx-4 mt-4">
         <WeekStrip fechasConEntrega={activas.map((t) => t.fecha_limite)} colorPunto={areaPrincipal?.color} />
       </div>
+
+      <TarjetaBitacora alumno={uid} />
 
       <section className="mx-4 mt-5 flex flex-col gap-3">
         <TituloSeccion extra={pestana === 'hecho' ? `${lista.length} hechas` : `${activas.length} por hacer`}>Tus pendientes</TituloSeccion>
@@ -248,5 +251,36 @@ export function PedirAyuda({ tarea, onCerrar, guardar }: { tarea: Tarea | null; 
         </>
       )}
     </Sheet>
+  );
+}
+
+/** Acceso a las bitácoras de la semana: cuántas entregó, si hay algo por corregir y el plazo. */
+function TarjetaBitacora({ alumno }: { alumno?: string }) {
+  const lunes = lunesDe();
+  const { data: lista = [], isLoading } = useBitacorasSemana(alumno, lunes);
+  const { data: vence = new Date() } = usePlazoBitacora(lunes);
+  const { data: todas = [] } = useMisBitacoras(alumno);
+  const nBorradores = todas.filter((b) => b.estado === 'borrador').length;
+  if (isLoading) return null;
+  const entregadas = lista.filter((b) => b.estado === 'entregada' || b.estado === 'revisada').length;
+  const corregir = lista.some((b) => b.estado === 'devuelta');
+  const listo = entregadas > 0 && !corregir;
+  const plazo = plazoTexto(vence);
+  return (
+    <Link
+      to="/bitacora"
+      className={`mx-4 mt-4 flex min-h-tap items-center gap-3 rounded-tarjeta p-3.5 no-underline transition-transform duration-150 active:scale-[.99] ${corregir ? 'border-2 border-ambar bg-white' : listo ? 'border border-linea bg-white' : 'bg-crema'}`}
+    >
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-campo ${listo ? 'bg-atiempo-fondo text-atiempo' : 'bg-vino text-crema'}`}>
+        <Icon name={listo ? 'palomita' : 'editar'} size={20} />
+      </span>
+      <span className="flex min-w-0 flex-grow flex-col">
+        <strong className="text-[15px] text-vino">Mis bitácoras de la semana</strong>
+        <span className={`text-xs ${!listo && plazo.tono !== 'normal' ? 'font-semibold text-urgente' : 'text-tinta-2'}`}>
+          {corregir ? 'El coach te pidió corregir una' : listo ? `${entregadas} entregada${entregadas > 1 ? 's' : ''}${nBorradores ? ` · ${nBorradores} borrador${nBorradores > 1 ? 'es' : ''}` : ' · puedes agregar otra'}` : `${nBorradores ? `${nBorradores} borrador${nBorradores > 1 ? 'es' : ''} · ` : ''}${plazo.texto}`}
+        </span>
+      </span>
+      <Icon name="atras" size={18} className="shrink-0 rotate-180 text-vino" />
+    </Link>
   );
 }

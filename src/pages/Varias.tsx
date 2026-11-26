@@ -49,7 +49,7 @@ export function CambiarPassword({ abierto, onCerrar }: { abierto: boolean; onCer
 
 const ICONO_AVISO: Record<string, string> = {
   aprobada: 'palomita', comentario: 'enviar', vence: 'alerta', asignada: 'mas', regresada: 'atras',
-  bateria: 'rayo', felicitacion: 'estrella', mensaje: 'enviar',
+  bateria: 'rayo', felicitacion: 'estrella', mensaje: 'enviar', bitacora: 'editar',
 };
 
 export function Avisos() {
@@ -85,7 +85,7 @@ export function Avisos() {
         <div key={g} className="flex flex-col gap-2">
           <span className="mt-2 font-mono text-[11px] tracking-[.08em] text-tinta-3">{g}</span>
           {items.map((a) => (
-            <Link key={a.id} to={a.tarea_id ? `/tarea/${a.tarea_id}` : '#'} onClick={() => !a.leido && abrir(a.id)} className={`flex items-start gap-3 rounded-2xl border bg-white p-3.5 text-tinta no-underline ${a.leido ? 'border-linea' : 'border-2 border-ambar'}`}>
+            <Link key={a.id} to={a.tarea_id ? `/tarea/${a.tarea_id}` : a.tipo === 'bitacora' ? '/bitacora' : '#'} onClick={() => !a.leido && abrir(a.id)} className={`flex items-start gap-3 rounded-2xl border bg-white p-3.5 text-tinta no-underline ${a.leido ? 'border-linea' : 'border-2 border-ambar'}`}>
               <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-campo ${a.leido ? 'bg-crema text-vino' : 'bg-vino text-crema'}`}><Icon name={ICONO_AVISO[a.tipo] ?? 'campana'} size={18} /></span>
               <span className="flex min-w-0 flex-grow flex-col gap-0.5">
                 <strong className="text-sm">{a.titulo}</strong>

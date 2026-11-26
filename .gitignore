@@ -33,3 +33,4 @@ supabase/.branches
 
 # Acceso temporal del coach (local, nunca al repo)
 ACCESO_COACH.txt
+respaldos/

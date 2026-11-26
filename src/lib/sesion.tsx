@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
-import { activarCacheDe, cerrarCache, limpiarCopias } from './cache-privada';
+import { activarCacheDe, borrarRespaldos, cerrarCache, limpiarCopias } from './cache-privada';
 import { FUNCIONES, recordar, supabase } from './supabase';
 import type { Membresia, Perfil } from './tipos';
 
@@ -86,7 +86,10 @@ export function SesionProvider({ children }: { children: ReactNode }) {
               try {
                 // SEG-003: hidratar solo con identidad conocida; cerrar y borrar la caché al salir o cambiar
                 if (uid) await activarCacheDe(qc, uid);
-                else await cerrarCache(qc);
+                else {
+                  await cerrarCache(qc);
+                  borrarRespaldos(); // sin sesión no debe quedar texto privado de nadie en el teléfono
+                }
                 await cargarPerfil(uid);
               } catch {
                 /* la pantalla de error se encarga */
