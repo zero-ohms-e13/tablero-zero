@@ -14,7 +14,7 @@ class Almacen {
 const ls = new Almacen();
 (globalThis as unknown as { window: unknown }).window = { localStorage: ls };
 
-const { activarCacheDe, cerrarCache, limpiarCopias, PREFIJO } = await import('../../src/lib/cache-privada');
+const { activarCacheDe, borrarRespaldos, cerrarCache, limpiarCopias, PREFIJO, RESPALDO, respaldo } = await import('../../src/lib/cache-privada');
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let qc: QueryClient;
@@ -99,5 +99,35 @@ describe('SEG-003 · caché aislada por usuario', () => {
     expect(ls.getItem('tz.cache')).toBeNull();
     expect(ls.getItem('tz.cache.dueno')).toBeNull();
     expect(ls.getItem('tz.prefs')).toBe('{}'); // preferencias del dispositivo se quedan
+  });
+});
+
+describe('Bitácora · respaldo local del texto sin guardar', () => {
+  it('se guarda solo para el usuario activo, sobrevive a recargar y se borra al cerrar sesión', async () => {
+    await activarCacheDe(qc, 'A');
+    respaldo.guardar('A', 'bitacora.2026-11-23', { d: 'texto de A' });
+    respaldo.guardar('B', 'bitacora.2026-11-23', { d: 'no debe escribirse' });
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toEqual({ d: 'texto de A' });
+    expect(ls.getItem(RESPALDO + 'B.bitacora.2026-11-23')).toBeNull();
+    // Recargar la app: al arrancar se limpia sin saber quién es (no toca respaldos) y luego se activa A
+    limpiarCopias();
+    limpiarCopias('A');
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toEqual({ d: 'texto de A' });
+    await cerrarCache(qc);
+    expect(ls.getItem(RESPALDO + 'A.bitacora.2026-11-23')).toBeNull();
+  });
+
+  it('al entrar otra cuenta en el mismo teléfono, el respaldo del anterior desaparece', async () => {
+    ls.setItem(RESPALDO + 'A.bitacora.2026-11-23', JSON.stringify({ d: 'texto de A' }));
+    await activarCacheDe(qc, 'B');
+    expect(ls.getItem(RESPALDO + 'A.bitacora.2026-11-23')).toBeNull();
+    expect(respaldo.leer('A', 'bitacora.2026-11-23')).toBeNull();
+  });
+
+  it('si la app abre sin sesión, no queda ningún respaldo', () => {
+    ls.setItem(RESPALDO + 'A.bitacora.2026-11-23', '{}');
+    borrarRespaldos();
+    expect(ls.getItem(RESPALDO + 'A.bitacora.2026-11-23')).toBeNull();
+    expect(PREFIJO).not.toBe(RESPALDO);
   });
 });

@@ -12,6 +12,8 @@ import {
 import { esMia, useTareas } from '../lib/datos';
 import { useMateriales } from '../lib/materiales';
 import { useSesion } from '../lib/sesion';
+import { respaldo } from '../lib/cache-privada';
+import { haceCuanto } from '../lib/fechas';
 import type { Tarea } from '../lib/tipos';
 
 type MaterialMin = { id: string; titulo: string; retirado_at?: string | null };
@@ -41,20 +43,29 @@ export default function Bitacora() {
   const editable = b?.estado === 'devuelta' || (semanaAbierta(lunes) && (!b || b.estado === 'borrador'));
   const { data: vence = new Date() } = usePlazoBitacora(lunes);
   const plazo = plazoTexto(vence);
-  const ir = (l: string) => setParams(l === actual ? {} : { semana: l }, { replace: true });
+  const salirEditor = useRef<(() => Promise<boolean>) | null>(null);
+  const toastP = useToast();
+  // Dentro de la bitácora, cambiar de semana espera a que se confirme el guardado; si falla, se queda aquí
+  async function ir(l: string) {
+    if (salirEditor.current && !(await salirEditor.current())) {
+      toastP({ tipo: 'error', titulo: 'No se guardó tu bitácora.', texto: 'Te quedas en esta semana para que no pierdas lo escrito. Toca «Reintentar».' });
+      return;
+    }
+    setParams(l === actual ? {} : { semana: l }, { replace: true });
+  }
 
   return (
     <PantallaCel>
       <HeaderVino titulo="Mi bitácora" subtitulo="Solo la ven tú y el coach" atras="/">
         <div className="flex items-center gap-2">
-          <button onClick={() => ir(sumarSemanas(lunes, -1))} disabled={!semanaAbierta(sumarSemanas(lunes, -1))} aria-label="Semana anterior" className="flex h-11 w-11 items-center justify-center rounded-campo border border-crema/35 bg-transparent text-crema disabled:opacity-40">
+          <button onClick={() => void ir(sumarSemanas(lunes, -1))} disabled={!semanaAbierta(sumarSemanas(lunes, -1))} aria-label="Semana anterior" className="flex h-11 w-11 items-center justify-center rounded-campo border border-crema/35 bg-transparent text-crema disabled:opacity-40">
             <Icon name="atras" />
           </button>
           <div className="flex min-w-0 flex-grow flex-col items-center">
             <strong className="font-titulo text-[17px]">Semana del {rangoSemana(lunes)}</strong>
             <span className="text-xs opacity-90">{lunes === actual ? 'Esta semana' : 'Semana anterior'}</span>
           </div>
-          <button onClick={() => ir(sumarSemanas(lunes, 1))} disabled={lunes >= actual} aria-label="Semana siguiente" className="flex h-11 w-11 rotate-180 items-center justify-center rounded-campo border border-crema/35 bg-transparent text-crema disabled:opacity-40">
+          <button onClick={() => void ir(sumarSemanas(lunes, 1))} disabled={lunes >= actual} aria-label="Semana siguiente" className="flex h-11 w-11 rotate-180 items-center justify-center rounded-campo border border-crema/35 bg-transparent text-crema disabled:opacity-40">
             <Icon name="atras" />
           </button>
         </div>
@@ -79,7 +90,7 @@ export default function Bitacora() {
               </section>
             )}
             {editable ? (
-              <Editor key={`${lunes}-${recargas}`} lunes={lunes} inicial={b ?? null} onRecargar={async () => { await q.refetch(); setRecargas((n) => n + 1); }} />
+              <Editor key={`${lunes}-${recargas}`} lunes={lunes} inicial={b ?? null} salirRef={salirEditor} onRecargar={async () => { await q.refetch(); setRecargas((n) => n + 1); }} />
             ) : b ? (
               <Lectura b={b} />
             ) : (
@@ -92,10 +103,10 @@ export default function Bitacora() {
           <section className="flex flex-col gap-2 pb-4">
             <TituloSeccion>Semanas anteriores</TituloSeccion>
             {hist.data!.filter((h) => h.semana !== lunes).map((h) => (
-              <Link key={h.id} to={h.semana === actual ? '/bitacora' : `/bitacora?semana=${h.semana}`} className="flex min-h-tap items-center justify-between gap-2 rounded-campo border border-linea bg-white px-3.5 py-2.5 text-sm text-tinta no-underline">
+              <button key={h.id} type="button" onClick={() => void ir(h.semana)} className="flex min-h-tap w-full items-center justify-between gap-2 rounded-campo border border-linea bg-white px-3.5 py-2.5 text-left text-sm text-tinta">
                 <span>Semana del {rangoSemana(h.semana)}</span>
                 <span className="text-xs font-semibold text-vino">{ETIQUETA_ESTADO_BITACORA[h.estado]}</span>
-              </Link>
+              </button>
             ))}
           </section>
         )}
@@ -107,20 +118,31 @@ export default function Bitacora() {
 // ---------- Editor con guardado automático ----------
 type EstadoGuardado = 'guardado' | 'cambios' | 'guardando' | 'error' | 'conflicto';
 
-function Editor({ lunes, inicial, onRecargar }: { lunes: string; inicial: TBitacora | null; onRecargar: () => Promise<void> }) {
+type Respaldo = { d: DatosBitacora; version: number; at: number };
+
+function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inicial: TBitacora | null; onRecargar: () => Promise<void>; salirRef: { current: (() => Promise<boolean>) | null } }) {
+  const { perfil: yo } = useSesion();
+  const uid = yo?.id ?? '';
+  const clave = `bitacora.${lunes}`;
+  // Si quedó texto sin guardar en este teléfono (red caída al salir, app cerrada), se recupera
+  const [recuperado] = useState<Respaldo | null>(() => {
+    const x = uid ? respaldo.leer<Respaldo>(uid, clave) : null;
+    return x && JSON.stringify(x.d) !== JSON.stringify(deServidor(inicial)) ? x : null;
+  });
   const { mutateAsync: guardarRpc } = useGuardarBitacora();
   const entregar = useEntregarBitacora();
   const toast = useToast();
-  const [d, setD] = useState<DatosBitacora>(() => deServidor(inicial));
-  const [estado, setEstado] = useState<EstadoGuardado>('guardado');
+  const [d, setD] = useState<DatosBitacora>(() => recuperado?.d ?? deServidor(inicial));
+  const [estado, setEstado] = useState<EstadoGuardado>(recuperado ? 'cambios' : 'guardado');
   const [error, setError] = useState<string | null>(null);
   const [verFormato, setVerFormato] = useState(false);
   const [libre, setLibre] = useState(!!inicial?.texto_libre);
-  const servidor = useRef({ id: inicial?.id ?? null, version: inicial?.version ?? 0 });
+  // Con texto recuperado se usa la versión en que se escribió: si el servidor cambió después, habrá conflicto (no se pisa)
+  const servidor = useRef({ id: inicial?.id ?? null, version: recuperado ? recuperado.version : inicial?.version ?? 0 });
   const enCurso = useRef<Promise<boolean> | null>(null);
   const ultimo = useRef(d);
   ultimo.current = d;
-  const sucio = useRef(false); // hay algo escrito que no ha llegado al servidor
+  const sucio = useRef(!!recuperado); // hay algo escrito que no ha llegado al servidor
   const cambiar = (p: Partial<DatosBitacora>) => {
     setD((x) => ({ ...x, ...p }));
     sucio.current = true;
@@ -136,7 +158,10 @@ function Editor({ lunes, inicial, onRecargar }: { lunes: string; inicial: TBitac
         const enviado = ultimo.current;
         const r = await guardarRpc({ lunes, version: servidor.current.version, datos: enviado });
         servidor.current = { id: r.id, version: r.version };
-        if (ultimo.current === enviado) sucio.current = false; // si escribió mientras guardaba, sigue pendiente
+        if (ultimo.current === enviado) {
+          sucio.current = false; // si escribió mientras guardaba, sigue pendiente
+          if (uid) respaldo.borrar(uid, clave);
+        }
         setEstado((e) => (e === 'guardando' ? 'guardado' : e));
         setError(null);
         return true;
@@ -151,7 +176,20 @@ function Editor({ lunes, inicial, onRecargar }: { lunes: string; inicial: TBitac
     })();
     enCurso.current = p;
     return p;
-  }, [guardarRpc, lunes]);
+  }, [guardarRpc, lunes, uid, clave]);
+
+  // Respaldo local de lo escrito mientras no llegue al servidor
+  useEffect(() => {
+    if (sucio.current && uid) respaldo.guardar(uid, clave, { d, version: servidor.current.version, at: Date.now() } satisfies Respaldo);
+  }, [d, uid, clave]);
+
+  // La página pide salir: espera a que se confirme el guardado (true) o avisa que falló (false)
+  useEffect(() => {
+    salirRef.current = async () => (sucio.current ? guardarAhora() : true);
+    return () => {
+      salirRef.current = null;
+    };
+  }, [salirRef, guardarAhora]);
 
   // Si llega del servidor una versión más nueva (p. ej. al volver a una semana que se guardó al salir) y no
   // hay nada escrito pendiente, se adopta; si hay cambios pendientes, el guardado detectará el conflicto.
@@ -205,12 +243,16 @@ function Editor({ lunes, inicial, onRecargar }: { lunes: string; inicial: TBitac
   }
 
   const { data: tareas = [] } = useTareas();
-  const { perfil } = useSesion();
-  const misTareas = useMemo(() => tareas.filter((t) => esMia(t, perfil?.id)), [tareas, perfil?.id]);
+  const misTareas = useMemo(() => tareas.filter((t) => esMia(t, uid)), [tareas, uid]);
   const { data: feed } = useMateriales();
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); void enviar(); }} className="flex flex-col gap-4" noValidate>
+      {recuperado && (
+        <p role="status" className="m-0 rounded-campo border-2 border-ambar bg-white px-3 py-2.5 text-sm">
+          <strong className="text-vino">Recuperamos lo que escribiste</strong> y no se había guardado ({haceCuanto(new Date(recuperado.at).toISOString())}). Se guardará en cuanto haya conexión.
+        </p>
+      )}
       {PREGUNTAS.map((p, i) => (
         <div key={p.campo} className="flex flex-col gap-1.5">
           <label htmlFor={`bit-${p.campo}`} className="text-[15px] font-semibold text-vino">{i + 1}. {p.titulo}</label>
