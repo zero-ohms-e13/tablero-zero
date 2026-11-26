@@ -234,6 +234,21 @@ describe('Bitácora · revisión del coach', () => {
   });
 });
 
+describe('Bitácora · borradores retomables', () => {
+  it('si el coach mueve el arranque hacia adelante, un borrador ya empezado se retoma y se entrega en su semana', async () => {
+    const id = nuevoId();
+    const fecha = await dia(`'${ACTUAL}'::date - 12`);
+    await guardar(U.diego, id, fecha, 0, { aporte: 'empezado antes del cambio' });
+    await b.como(U.coach, `select public.fijar_inicio_bitacoras('${ACTUAL}')`); // arranque movido: esa semana ya no está abierta
+    expect(await falla(U.diego, `public.guardar_bitacora('${nuevoId()}', '${fecha}', 0, '${datos()}'::jsonb)`)).toMatch(/no está abierta/); // nuevas, no
+    const v = await guardar(U.diego, id, fecha, 1, { aporte: 'retomado después del cambio' });
+    await uno(U.diego, `public.entregar_bitacora('${id}', ${v.version})`);
+    const [r] = await q<{ estado: string; aporte: string; fecha: string }>(`select estado, aporte, fecha::text from bitacoras where id = '${id}'`);
+    expect(r).toEqual({ estado: 'entregada', aporte: 'retomado después del cambio', fecha });
+    await b.como(U.coach, `select public.fijar_inicio_bitacoras(('${ACTUAL}'::date - 21))`);
+  });
+});
+
 describe('Bitácora · seguimiento del coach', () => {
   it('agrupa por alumno: cuántas entregó, cuántas faltan por revisar y el estado de la semana', async () => {
     const r = await resumen(U.coach, ACTUAL);

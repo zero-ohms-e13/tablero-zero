@@ -8,7 +8,7 @@ import { TextoLibre } from '../components/TextoLibre';
 import { Boton, Cargando, HeaderVino, PantallaCel, TituloSeccion, claseCampo, useToast } from '../components/ui';
 import {
   ETIQUETA_ESTADO_BITACORA, PREGUNTAS, diaBitacora, hoyMerida, lunesDe, rangoSemana, semanaAbierta, sumarSemanas, useEntregarBitacora,
-  useGuardarBitacora, useBitacorasSemana, useInicioBitacoras, useMisBitacoras, plazoTexto, usePlazoBitacora,
+  useGuardarBitacora, useBitacorasSemana, useBorradores, useInicioBitacoras, useMisBitacoras, plazoTexto, usePlazoBitacora,
   type Bitacora as TBitacora, type DatosBitacora, type EvidenciaBitacora,
 } from '../lib/bitacoras';
 import { esMia, useTareas } from '../lib/datos';
@@ -44,6 +44,7 @@ export default function Bitacora() {
   const sel = params.get('id'); // bitácora abierta (o una nueva, por su id generado aquí)
   const q = useBitacorasSemana(perfil?.id, lunes);
   const hist = useMisBitacoras(perfil?.id);
+  const pend = useBorradores(perfil?.id);
   const { data: inicio } = useInicioBitacoras();
   const [recargas, setRecargas] = useState(0);
   const lista = q.data ?? [];
@@ -52,7 +53,7 @@ export default function Bitacora() {
   const plazo = plazoTexto(vence);
   const entregadas = lista.filter((b) => b.estado === 'entregada' || b.estado === 'revisada');
   // Bitácoras nuevas que solo existen en este teléfono (se escribieron sin conexión y no llegaron al servidor)
-  const enServidor = new Set([...(hist.data ?? []).map((h) => h.id), ...lista.map((b) => b.id)]);
+  const enServidor = new Set([...(hist.data ?? []).map((h) => h.id), ...(pend.data ?? []).map((h) => h.id), ...lista.map((b) => b.id)]);
   const localesTodas = uid
     ? respaldo
         .listar<Respaldo>(uid, 'bitacora.')
@@ -63,7 +64,7 @@ export default function Bitacora() {
   const locales = localesTodas.filter((v) => v.semana === lunes);
   // Borradores: todo lo que aún no se entrega, de cualquier semana (para retomarlo cuando quieras)
   const borradores = [
-    ...(hist.data ?? []).filter((h) => h.estado === 'borrador' || h.estado === 'devuelta')
+    ...(pend.data ?? [])
       .map((h) => ({ id: h.id, semana: h.semana, fecha: h.fecha, resumen: h.aporte, devuelta: h.estado === 'devuelta', local: false, at: h.actualizado_at })),
     ...localesTodas.map((l) => ({ id: l.id, semana: l.semana, fecha: l.fecha, resumen: l.d.aporte, devuelta: false, local: true, at: new Date(l.at).toISOString() })),
   ].sort((a, b) => b.at.localeCompare(a.at));
@@ -124,14 +125,14 @@ export default function Bitacora() {
                 <span className="text-sm text-tinta-2">Bitácora del {diaBitacora(actualB.fecha)} · {ETIQUETA_ESTADO_BITACORA[actualB.estado]}</span>
                 <Lectura b={actualB} />
               </>
-            ) : actualB?.estado === 'devuelta' || abierta ? (
+            ) : actualB?.estado === 'devuelta' || actualB?.estado === 'borrador' || abierta ? (
               <Editor
                 key={`${sel}-${recargas}`}
                 id={sel}
                 lunes={lunes}
                 fechaInicial={actualB?.fecha ?? localSel?.fecha ?? (lunes === actual ? hoyMerida() : lunes)}
                 inicial={actualB}
-                fijarFecha={actualB?.estado === 'devuelta'}
+                fijarFecha={actualB?.estado === 'devuelta' || (actualB?.estado === 'borrador' && !abierta)}
                 salirRef={salirEditor}
                 onRecargar={async () => { await q.refetch(); setRecargas((n) => n + 1); }}
                 onEntregada={() => void ir({ id: null })}

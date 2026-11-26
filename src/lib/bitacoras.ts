@@ -88,6 +88,16 @@ export const useMisBitacoras = (alumno: string | undefined) =>
         Pick<Bitacora, 'id' | 'fecha' | 'semana' | 'estado' | 'aporte' | 'actualizado_at' | 'primera_entrega_at' | 'retro'>[],
   });
 
+/** Lo que aún no se entrega (borradores y devueltas), de cualquier semana y sin tope. */
+export const useBorradores = (alumno: string | undefined) =>
+  useQuery({
+    queryKey: ['bitacoras', alumno, 'pendientes'],
+    enabled: !!alumno,
+    queryFn: async () =>
+      ok(await supabase.from('bitacoras').select('id, fecha, semana, estado, aporte, actualizado_at').eq('alumno_id', alumno!).in('estado', ['borrador', 'devuelta']).order('actualizado_at', { ascending: false })) as
+        Pick<Bitacora, 'id' | 'fecha' | 'semana' | 'estado' | 'aporte' | 'actualizado_at'>[],
+  });
+
 export function useGuardarBitacora() {
   const qc = useQueryClient();
   return useMutation({
