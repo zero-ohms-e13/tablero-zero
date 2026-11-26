@@ -86,6 +86,15 @@ describe('Bitácora · varias por semana', () => {
     expect((await q<{ aporte: string; version: number }>(`select aporte, version from bitacoras where id = '${id}'`))[0]).toEqual({ aporte: 'texto original', version: 1 });
   });
 
+  it('el reintento compara también la evidencia: mismo enlace con otro nombre responde 409; con el mismo, pasa', async () => {
+    const id = nuevoId();
+    const ev = (nombre: string) => ({ evidencias: [{ tipo: 'enlace', url: 'https://github.com/zero-ohms-e13/robot', nombre }] });
+    await guardar(U.luis, id, HOY, 0, ev('Repo'));
+    expect((await guardar(U.luis, id, HOY, 0, ev('Repo'))).version).toBe(1);
+    expect(await falla(U.luis, `public.guardar_bitacora('${id}', '${HOY}', 0, '${datos(ev('Otro nombre'))}'::jsonb)`)).toMatch(/conflicto/);
+    expect((await q<{ nombre: string }>(`select nombre from bitacora_evidencias where bitacora_id = '${id}'`))[0].nombre).toBe('Repo');
+  });
+
   it('el id lo pone el cliente: reintentar la creación no duplica; el id de otro alumno no se puede tocar', async () => {
     const id = nuevoId();
     const v1 = await guardar(U.sofia, id, HOY, 0, { aporte: 'primera' });

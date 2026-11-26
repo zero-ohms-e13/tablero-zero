@@ -188,7 +188,8 @@ language sql immutable set search_path = '' as $$
     'siguiente', coalesce(p_datos ->> 'siguiente', ''), 'necesita_ayuda', coalesce((p_datos ->> 'necesita_ayuda')::boolean, false),
     'texto_libre', coalesce(p_datos ->> 'texto_libre', ''),
     'evidencias', coalesce((
-      select jsonb_agg(jsonb_build_object('tipo', e ->> 'tipo', 'tarea_id', e ->> 'tarea_id', 'material_id', e ->> 'material_id', 'url', e ->> 'url') order by o)
+      select jsonb_agg(jsonb_build_object('tipo', e ->> 'tipo', 'tarea_id', e ->> 'tarea_id', 'material_id', e ->> 'material_id', 'url', e ->> 'url',
+                                'nombre', case when e ->> 'tipo' = 'enlace' then left(nullif(btrim(coalesce(e ->> 'nombre', '')), ''), 160) end) order by o)
       from jsonb_array_elements(coalesce(p_datos -> 'evidencias', '[]'::jsonb)) with ordinality as x(e, o)), '[]'::jsonb))
 $$;
 
@@ -213,6 +214,9 @@ begin
     raise exception 'La fecha de la bitácora no puede ser futura.' using errcode = '22023';
   end if;
 
+  -- Dos solicitudes con el mismo id (reintento, doble toque) se atienden una tras otra: la segunda ya
+  -- encuentra la fila y sigue la ruta de reintento en lugar de chocar con la clave duplicada.
+  perform pg_advisory_xact_lock(hashtextextended('bitacora:' || p_id, 0));
   select * into v_b from bitacoras where id = p_id for update;
   if found and v_b.alumno_id <> v_yo then
     raise exception 'No tienes permiso para modificar esa bitácora.' using errcode = '42501';
@@ -235,7 +239,7 @@ begin
       select public.contenido_bitacora(v_b.fecha, jsonb_build_object(
                'aporte', v_b.aporte, 'aprendizaje', v_b.aprendizaje, 'siguiente', v_b.siguiente,
                'necesita_ayuda', v_b.necesita_ayuda, 'texto_libre', v_b.texto_libre,
-               'evidencias', coalesce((select jsonb_agg(jsonb_build_object('tipo', x.tipo, 'tarea_id', x.tarea_id, 'material_id', x.material_id, 'url', x.url) order by x.orden)
+               'evidencias', coalesce((select jsonb_agg(jsonb_build_object('tipo', x.tipo, 'tarea_id', x.tarea_id, 'material_id', x.material_id, 'url', x.url, 'nombre', x.nombre) order by x.orden)
                                        from bitacora_evidencias x where x.bitacora_id = v_b.id), '[]'::jsonb)))
         into v_guardado;
       if v_guardado = public.contenido_bitacora(p_fecha, p_datos) then
