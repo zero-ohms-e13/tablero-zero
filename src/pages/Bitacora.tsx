@@ -236,6 +236,20 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
     return () => clearTimeout(t);
   }, [d, estado, guardarAhora]);
 
+  // Rescate ante un conflicto: todo lo escrito en esta pantalla, como texto, al portapapeles
+  async function copiarMiTexto() {
+    const texto = [
+      ...PREGUNTAS.map((p, i) => `${i + 1}. ${p.titulo}\n${d[p.campo]}`),
+      d.texto_libre.trim() ? `Mi bitácora completa\n${d.texto_libre}` : '',
+    ].filter(Boolean).join('\n\n');
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast({ titulo: 'Copiado.', texto: 'Ya puedes cargar la versión guardada y pegar lo tuyo donde lo necesites.' });
+    } catch {
+      toast({ tipo: 'error', titulo: 'No se pudo copiar.', texto: 'Selecciona y copia el texto a mano antes de cargar la versión guardada.' });
+    }
+  }
+
   async function enviar() {
     const faltan = PREGUNTAS.filter((p) => !d[p.campo].trim());
     if (faltan.length) return setError(`Responde: ${faltan.map((p) => `«${p.titulo}»`).join(' y ')}`);
@@ -309,7 +323,13 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
         <div role="alert" className="flex flex-col gap-2 rounded-campo bg-[#F6D6D6] px-3 py-2.5 text-sm font-semibold text-vino">
           <span>{error}</span>
           {estado === 'conflicto' && (
-            <Boton type="button" variante="secundario" alto={44} onClick={() => void onRecargar()}>Cargar la versión guardada</Boton>
+            <>
+              <span className="text-xs font-normal">Antes de cargar la versión guardada, copia lo que escribiste para pegarlo después.</span>
+              <Boton type="button" variante="fantasma" alto={44} onClick={() => void copiarMiTexto()}>
+                <Icon name="documento" size={18} /> Copiar lo que escribí
+              </Boton>
+              <Boton type="button" variante="secundario" alto={44} onClick={() => void onRecargar()}>Cargar la versión guardada</Boton>
+            </>
           )}
           {estado === 'error' && <Boton type="button" variante="secundario" alto={44} onClick={() => void guardarAhora()}>Reintentar</Boton>}
         </div>
