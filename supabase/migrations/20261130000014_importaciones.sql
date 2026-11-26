@@ -30,6 +30,18 @@ begin
   if p_resumen::text ~* 'password|contraseña' then
     raise exception 'El registro de una carga no guarda contraseñas.' using errcode = '22023';
   end if;
+  -- Forma cerrada: solo estas claves, cada una una lista de textos cortos (nombres, usuarios, claves de fila
+  -- y códigos de error). Nada de objetos libres ni mensajes largos donde pudiera colarse un dato sensible.
+  if jsonb_typeof(coalesce(p_resumen, '{}'::jsonb)) <> 'object'
+     or exists (
+       select 1 from jsonb_each(coalesce(p_resumen, '{}'::jsonb)) e
+       where e.key not in ('areas', 'cuentas', 'asignaciones', 'tutorias', 'tareas', 'recuperadas', 'fallos')
+          or jsonb_typeof(e.value) <> 'array'
+          or jsonb_array_length(e.value) > 500
+          or exists (select 1 from jsonb_array_elements(e.value) x where jsonb_typeof(x) <> 'string' or char_length(x #>> '{}') > 160)
+     ) then
+    raise exception 'Registro de carga con un formato no permitido.' using errcode = '22023';
+  end if;
   insert into importaciones (id, coach_id, archivo, etapa, resumen)
   values (p_id, auth.uid(), left(coalesce(nullif(btrim(p_archivo), ''), 'hoja'), 200), p_etapa, coalesce(p_resumen, '{}'::jsonb))
   on conflict (id) do update set etapa = excluded.etapa, resumen = importaciones.resumen || excluded.resumen, actualizado_at = now();

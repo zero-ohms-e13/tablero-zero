@@ -12,9 +12,9 @@ export type Existentes = {
   perfiles: { id: string; usuario: string; nombre_visible: string; rol_global: string; activo: boolean }[];
   membresias: { usuario_id: string; area_id: string; es_lider: boolean }[];
   tutorias: { tutor_id: string; alumno_id: string }[];
-  tareas: { id: string; titulo: string; area_id: string }[];
+  tareas: { id: string; titulo: string; area_id: string; fecha_limite?: string | null; robot?: string }[];
 };
-export type EstadoFila = 'nueva' | 'existente' | 'conflicto' | 'invalida';
+export type EstadoFila = 'nueva' | 'existente' | 'cambio' | 'conflicto' | 'invalida';
 export type Problema = { hoja: NombreHoja; fila: number; mensaje: string; grave: boolean };
 export type NombreHoja = 'Áreas' | 'Cuentas' | 'Asignaciones' | 'Tutorías' | 'Tareas';
 export type RolCuenta = 'alumno' | 'tutor' | 'coach_aux';
@@ -24,13 +24,17 @@ export type CuentaPlan = {
   fila: number; clave: string; nombre: string; usuario: string; rol: RolCuenta; estado: EstadoFila; id?: string;
   membresias: { clave_area: string; es_lider: boolean }[]; // para alumnos (nuevos o existentes)
 };
+/** Alumno ↔ área. 'nueva' en una cuenta nueva se crea junto con la cuenta; 'cambio' = cambia líder/integrante. */
+export type AsignacionPlan = { fila: number; clave_persona: string; clave_area: string; es_lider: boolean; estado: EstadoFila };
 export type TutoriaPlan = { fila: number; clave_tutor: string; clave_alumno: string; estado: EstadoFila };
 export type TareaPlan = {
   fila: number; clave: string; titulo: string; clave_area: string; robot: 'VEX' | 'FTC' | 'Ambos'; responsables: string[];
-  fecha_limite: string | null; para_que_sirve: string; pasos: string[]; estado: EstadoFila; id?: string;
+  fecha_limite: string | null; para_que_sirve: string; pasos: string[]; estado: EstadoFila;
+  /** id estable de importación (clave, título y área): repetir la fila no la duplica */
+  id: string;
 };
 export type Plan = {
-  areas: AreaPlan[]; cuentas: CuentaPlan[]; tutorias: TutoriaPlan[]; tareas: TareaPlan[];
+  areas: AreaPlan[]; cuentas: CuentaPlan[]; asignaciones: AsignacionPlan[]; tutorias: TutoriaPlan[]; tareas: TareaPlan[];
   problemas: Problema[];
   /** true si hay algún problema grave: no se puede cargar hasta corregir la hoja */
   bloquea: boolean;
@@ -66,8 +70,16 @@ export function filasDe(crudas: unknown[][]): Fila[] {
   });
   return crudas
     .slice(1)
-    .map((r) => Object.fromEntries(enc.map((k, i) => [k, celda(r[i])])))
-    .filter((f) => Object.values(f).some((v) => v !== ''));
+    .map((r) => {
+      const fila: Fila = Object.fromEntries(enc.map((k, i) => [k, celda(r[i])]));
+      // Celda de fecha a medianoche: no se distingue "sin hora" de "00:00", así que se marca para avisar
+      enc.forEach((k, i) => {
+        const v = r[i];
+        if (v instanceof Date && v.toISOString().slice(11, 16) === '00:00') fila[`_fecha_celda_${k}`] = '1';
+      });
+      return fila;
+    })
+    .filter((f) => Object.entries(f).some(([k, v]) => !k.startsWith('_') && v !== ''));
 }
 
 function celda(v: unknown): string {
@@ -99,7 +111,7 @@ export function fechaLimite(v: string): string | null | 'invalida' {
   return new Date(Date.UTC(a, mes - 1, d, h + 6, mi)).toISOString(); // Mérida = UTC-6
 }
 
-export function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrincipal: boolean } = { coachPrincipal: true }): Plan {
+export async function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrincipal: boolean } = { coachPrincipal: true }): Promise<Plan> {
   const problemas: Problema[] = [];
   const mal = (h: NombreHoja, fila: number, mensaje: string, grave = true) => problemas.push({ hoja: h, fila, mensaje, grave });
   const nFila = (i: number) => i + 2; // fila de la hoja (1 = encabezados)
@@ -183,13 +195,24 @@ export function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrincipal: 
     if (usuario) usuarios.set(usuario, fila);
     const ya = ex.perfiles.find((p) => p.usuario === usuario);
     if (ya && estado === 'nueva') {
-      const rolYa = ya.rol_global === 'coach_aux' ? 'coach_aux' : ya.rol_global;
-      if (rolYa !== rol) {
-        mal('Cuentas', fila, `Ya existe la cuenta ${usuario} pero con rol ${ya.rol_global}; aquí dice ${f.rol}.`);
+      if (ya.rol_global !== rol) {
+        mal('Cuentas', fila, `Ya existe la cuenta ${usuario} pero con rol ${ya.rol_global}; aquí dice ${f.rol}. Si es otra persona, ponle otro usuario_deseado.`);
+        estado = 'conflicto';
+      } else if (normal(ya.nombre_visible) !== normal(nombre)) {
+        // Mismo usuario y rol pero otro nombre: puede ser otra persona. No se vincula sin que el coach lo decida.
+        mal('Cuentas', fila, `El usuario ${usuario} ya es de «${ya.nombre_visible}». Si es la misma persona, copia ese nombre tal cual; si es otra, ponle otro usuario_deseado.`);
         estado = 'conflicto';
       } else {
         estado = 'existente';
-        if (!ya.activo) mal('Cuentas', fila, `La cuenta ${usuario} ya existe pero está desactivada; actívala en Cuentas si sigue en el equipo.`, false);
+        mal('Cuentas', fila, `Se usará la cuenta que ya existe: ${usuario} (${ya.nombre_visible}).`, false);
+        if (!ya.activo) mal('Cuentas', fila, `La cuenta ${usuario} está desactivada; actívala en Cuentas si sigue en el equipo.`, false);
+      }
+    } else if (!ya && estado === 'nueva') {
+      // Mismo nombre y rol con otro usuario: probablemente la misma persona (evita cuentas duplicadas)
+      const homonimo = ex.perfiles.find((p) => p.rol_global === rol && normal(p.nombre_visible) === normal(nombre));
+      if (homonimo) {
+        mal('Cuentas', fila, `Ya hay una cuenta de ${rol === 'coach_aux' ? 'mentor' : rol} llamada «${homonimo.nombre_visible}» (${homonimo.usuario}). Si es la misma persona, pon usuario_deseado ${homonimo.usuario}; si es otra, distingue el nombre visible.`);
+        estado = 'conflicto';
       }
     }
     const plan: CuentaPlan = { fila, clave: c, nombre, usuario, rol: rol ?? 'alumno', estado, id: estado === 'existente' ? ya?.id : undefined, membresias: [] };
@@ -202,6 +225,7 @@ export function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrincipal: 
   };
 
   // --- Asignaciones (alumno ↔ área) ---
+  const asignaciones: AsignacionPlan[] = [];
   const parAsig = new Set<string>();
   hoja.asignaciones.forEach((f, i) => {
     const fila = nFila(i);
@@ -215,7 +239,16 @@ export function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrincipal: 
     const k = `${p.clave}|${a.clave}`.toUpperCase();
     if (parAsig.has(k)) return mal('Asignaciones', fila, `${p.clave} ya está asignado a ${a.clave} en otra fila; se toma una sola vez.`, false);
     parAsig.add(k);
-    p.membresias.push({ clave_area: a.clave, es_lider: rolArea === 'lider' });
+    const es_lider = rolArea === 'lider';
+    p.membresias.push({ clave_area: a.clave, es_lider });
+    let estado: EstadoFila = 'nueva';
+    const ya = p.id && a.id ? ex.membresias.find((m) => m.usuario_id === p.id && m.area_id === a.id) : undefined;
+    if (ya && ya.es_lider === es_lider) estado = 'existente';
+    else if (ya) {
+      estado = 'cambio';
+      mal('Asignaciones', fila, `${p.clave} pasa de ${ya.es_lider ? 'líder' : 'integrante'} a ${es_lider ? 'líder' : 'integrante'} en ${a.nombre}.`, false);
+    }
+    asignaciones.push({ fila, clave_persona: p.clave, clave_area: a.clave, es_lider, estado });
   });
   for (const p of cuentas) {
     if (p.rol === 'alumno' && p.estado === 'nueva' && p.membresias.length === 0) {
@@ -261,7 +294,7 @@ export function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrincipal: 
   // --- Tareas ---
   const tareas: TareaPlan[] = [];
   const clavesTarea = new Map<string, number>();
-  hoja.tareas.forEach((f, i) => {
+  for (const [i, f] of hoja.tareas.entries()) {
     const fila = nFila(i);
     const c = f.clave_tarea ?? '';
     const titulo = (f.titulo ?? '').replace(/\s+/g, ' ');
@@ -305,15 +338,29 @@ export function revisar(hoja: Hoja, ex: Existentes, opciones: { coachPrincipal: 
         mal('Tareas', fila, `${r} no pertenece al área ${a.clave}; igual se le puede asignar, pero revisa que sea correcto.`, false);
       }
     }
-    if (estado === 'nueva' && a?.id && ex.tareas.some((t) => t.area_id === a.id && normal(t.titulo) === normal(titulo))) estado = 'existente';
-    tareas.push({
+    if (f._fecha_celda_fecha_limite && fecha) {
+      mal('Tareas', fila, 'La fecha venía como celda de fecha sin hora: vence a las 23:59. Si quieres otra hora, escríbela como texto (ej. 2026-12-05 18:30).', false);
+    }
+    const id = await idEstable(`tarea|${c.toUpperCase()}|${normal(titulo)}|${(a?.clave ?? f.clave_area ?? '').toUpperCase()}`);
+    const yaId = ex.tareas.find((t) => t.id === id);
+    if (estado === 'nueva' && yaId) {
+      estado = 'existente';
+      const fechaHoja = fecha && fecha !== 'invalida' ? Date.parse(fecha) : null;
+      const fechaYa = yaId.fecha_limite ? Date.parse(yaId.fecha_limite) : null;
+      const cambia = (yaId.fecha_limite !== undefined && fechaYa !== fechaHoja) || (yaId.robot !== undefined && yaId.robot !== robot);
+      if (cambia) mal('Tareas', fila, 'Esta tarea ya se cargó antes: la hoja no cambia su fecha, robot, responsables ni pasos. Edítala en la app.', false);
+    } else if (estado === 'nueva' && a?.id && ex.tareas.some((t) => t.area_id === a.id && normal(t.titulo) === normal(titulo))) {
+      mal('Tareas', fila, `Ya hay una tarea «${titulo}» en ${a.nombre} que no viene de esta fila. Si es la misma, quítala de la hoja; si es otra, cambia el título.`);
+      estado = 'conflicto';
+    }
+    tareas.push({ id,
       fila, clave: c, titulo, clave_area: a?.clave ?? (f.clave_area ?? ''), robot: robot ?? 'Ambos', responsables: resp,
       fecha_limite: fecha === 'invalida' ? null : fecha, para_que_sirve: f.descripcion_opcional ?? '',
       pasos: (f.pasos ?? '').split(/[;\n]/).map((x) => x.trim()).filter(Boolean).slice(0, 20), estado,
     });
-  });
+  }
 
-  return { areas, cuentas, tutorias, tareas, problemas, bloquea: problemas.some((p) => p.grave) };
+  return { areas, cuentas, asignaciones, tutorias, tareas, problemas, bloquea: problemas.some((p) => p.grave) };
 }
 
 /** Cuántas filas hay de cada estado, por pestaña. */
@@ -321,9 +368,12 @@ export function conteo(plan: Plan) {
   const de = (xs: { estado: EstadoFila }[]) => ({
     nueva: xs.filter((x) => x.estado === 'nueva').length,
     existente: xs.filter((x) => x.estado === 'existente').length,
+    cambio: xs.filter((x) => x.estado === 'cambio').length,
     error: xs.filter((x) => x.estado === 'conflicto' || x.estado === 'invalida').length,
   });
-  return { areas: de(plan.areas), cuentas: de(plan.cuentas), tutorias: de(plan.tutorias), tareas: de(plan.tareas) };
+  // Las asignaciones de cuentas nuevas se crean junto con la cuenta: aquí solo cuentan las de cuentas existentes
+  const asig = plan.asignaciones.filter((x) => !plan.cuentas.some((c) => c.estado === 'nueva' && c.clave.toUpperCase() === x.clave_persona.toUpperCase()));
+  return { areas: de(plan.areas), cuentas: de(plan.cuentas), asignaciones: de(asig), tutorias: de(plan.tutorias), tareas: de(plan.tareas) };
 }
 
 /** Id estable a partir de un texto (para que repetir la carga del mismo lote no duplique): UUID con forma v4. */

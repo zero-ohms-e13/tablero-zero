@@ -23,11 +23,13 @@ const hoja: Hoja = {
 };
 
 /** Base simulada: guarda lo que se crea y responde como la app (admin-accounts devuelve fichas). */
-function base(fallar: { cuenta?: string; tarea?: string } = {}) {
+function base(fallar: { cuenta?: string; tarea?: string; registro?: string; ocupar?: string } = {}) {
   const db: Existentes = { areas: [{ id: 'a-prog', nombre: 'Programación' }], perfiles: [], membresias: [], tutorias: [], tareas: [] };
   const llamadas: string[] = [];
-  const solicitudes = new Map<string, string>(); // solicitud → usuario (idempotencia de admin-accounts)
+  const solicitudes = new Map<string, { usuario_id: string; usuario: string; rol: string }>(); // idempotencia de admin-accounts
+  const registros: Record<string, unknown>[] = [];
   let n = 0;
+  const responsablesDe = new Map<string, string[]>();
   const deps: Deps = {
     crearArea: async (a) => {
       llamadas.push(`area:${a.nombre}`);
@@ -39,13 +41,19 @@ function base(fallar: { cuenta?: string; tarea?: string } = {}) {
       llamadas.push(`cuenta:${c.usuario}`);
       if (fallar.cuenta === c.usuario) throw new Error('Sin internet (simulado)');
       const sol = String(c.solicitud_id);
-      if (solicitudes.has(sol)) return { fichas: [], ya_creadas: [{ usuario: solicitudes.get(sol)! }] };
+      if (solicitudes.has(sol)) return { fichas: [], ya_creadas: [solicitudes.get(sol)!] };
+      let usuario = String(c.usuario);
+      if (fallar.ocupar === usuario) {
+        // Otra persona tomó ese usuario entre la revisión y el alta: el servidor ajusta el nuestro
+        db.perfiles.push({ id: 'p-ajena', usuario, nombre_visible: 'Otra Persona', rol_global: String(c.rol), activo: true });
+        usuario = `${usuario}2`;
+      }
       const id = `p-${++n}`;
-      db.perfiles.push({ id, usuario: String(c.usuario), nombre_visible: String(c.nombre), rol_global: String(c.rol), activo: true });
+      db.perfiles.push({ id, usuario, nombre_visible: String(c.nombre), rol_global: String(c.rol), activo: true });
       for (const m of (c.membresias as { area_id: string; es_lider: boolean }[]) ?? []) db.membresias.push({ usuario_id: id, ...m });
       if (c.alumno_id) db.tutorias.push({ tutor_id: id, alumno_id: String(c.alumno_id) });
-      solicitudes.set(sol, String(c.usuario));
-      return { fichas: [{ usuario_id: id, usuario: String(c.usuario), password: 'cobre-123', nombre: String(c.nombre), rol: String(c.rol), vence: '2026-12-02' }] };
+      solicitudes.set(sol, { usuario_id: id, usuario, rol: String(c.rol) });
+      return { fichas: [{ usuario_id: id, usuario, password: 'cobre-123', nombre: String(c.nombre), rol: String(c.rol), vence: '2026-12-02' }] };
     },
     asignar: async (u, a, l) => {
       llamadas.push(`asignar:${u}:${a}:${l}`);
@@ -59,20 +67,23 @@ function base(fallar: { cuenta?: string; tarea?: string } = {}) {
       llamadas.push(`tarea:${p.titulo}`);
       if (fallar.tarea === p.titulo) throw new Error('conflicto simulado');
       if (!db.tareas.some((t) => t.id === p.id)) db.tareas.push({ id: String(p.id), titulo: String(p.titulo), area_id: String(p.area_id) });
+      responsablesDe.set(String(p.titulo), p.responsables as string[]);
     },
     existentes: async () => structuredClone(db),
     registrar: async (etapa, resumen) => {
       llamadas.push(`registro:${etapa}`);
+      registros.push(resumen);
+      if (fallar.registro === etapa) throw new Error('Sin internet (simulado)');
       expect(JSON.stringify(resumen)).not.toMatch(/cobre-123|password/); // nunca contraseñas en el registro
     },
   };
-  return { db, deps, llamadas };
+  return { db, deps, llamadas, registros, responsablesDe };
 }
 
-describe('Importar · ejecución por etapas', () => {
+describe('Importar · ejecución por etapas', async () => {
   it('carga todo en orden: áreas, cuentas con sus áreas, tutor con sus dos alumnos y tareas con responsables', async () => {
     const { db, deps, llamadas } = base();
-    const plan = revisar(hoja, await deps.existentes());
+    const plan = await revisar(hoja, await deps.existentes());
     expect(plan.bloquea).toBe(false);
     const avances: string[] = [];
     const r = await ejecutar(plan, deps, (a) => avances.push(`${a.etapa} ${a.hechas}/${a.total}`));
@@ -99,9 +110,9 @@ describe('Importar · ejecución por etapas', () => {
 
   it('repetir la misma hoja no duplica nada: todo sale como existente y no se llama a crear', async () => {
     const { deps, llamadas } = base();
-    await ejecutar(revisar(hoja, await deps.existentes()), deps);
+    await ejecutar(await revisar(hoja, await deps.existentes()), deps);
     llamadas.length = 0;
-    const plan2 = revisar(hoja, await deps.existentes());
+    const plan2 = await revisar(hoja, await deps.existentes());
     expect([...plan2.areas, ...plan2.cuentas, ...plan2.tareas].every((x) => x.estado === 'existente')).toBe(true);
     const r = await ejecutar(plan2, deps);
     expect(llamadas.filter((x) => /^(area|cuenta|tarea|tutor):/.test(x))).toEqual([]);
@@ -110,14 +121,14 @@ describe('Importar · ejecución por etapas', () => {
 
   it('una fila que falla no detiene las demás; reintentar termina lo que faltó sin duplicar', async () => {
     const primera = base({ cuenta: 'ana.l' });
-    const r1 = await ejecutar(revisar(hoja, await primera.deps.existentes()), primera.deps);
+    const r1 = await ejecutar(await revisar(hoja, await primera.deps.existentes()), primera.deps);
     expect(r1.fallos.map((f) => f.clave)).toEqual(expect.arrayContaining(['ALU-02', 'TAR-01', 'TAR-02']));
     expect(r1.creados.cuentas.sort()).toEqual(['diego.p', 'tutor.diego.p']); // Diego y su tutor sí quedaron
     expect(primera.llamadas.at(-1)).toBe('registro:con_errores');
     // Segundo intento con la red bien, partiendo de lo que dejó el primero
     const reintento = base();
     Object.assign(reintento.db, structuredClone(primera.db));
-    const r2 = await ejecutar(revisar(hoja, await reintento.deps.existentes()), reintento.deps);
+    const r2 = await ejecutar(await revisar(hoja, await reintento.deps.existentes()), reintento.deps);
     expect(r2.fallos).toEqual([]);
     expect(r2.creados.cuentas).toEqual(['ana.l']);
     expect(reintento.db.perfiles.filter((p) => p.usuario === 'diego.p')).toHaveLength(1);
@@ -126,7 +137,42 @@ describe('Importar · ejecución por etapas', () => {
 
   it('una hoja con errores no se ejecuta', async () => {
     const { deps } = base();
-    const mala = revisar({ ...hoja, tareas: [{ clave_tarea: 'X', titulo: 'ab', clave_area: 'MEC', responsables: '', fecha_limite: '', robot: '', descripcion_opcional: '', pasos: '' }] }, await deps.existentes());
+    const mala = await revisar({ ...hoja, tareas: [{ clave_tarea: 'X', titulo: 'ab', clave_area: 'MEC', responsables: '', fecha_limite: '', robot: '', descripcion_opcional: '', pasos: '' }] }, await deps.existentes());
     await expect(ejecutar(mala, deps)).rejects.toThrow(/errores/);
+  });
+
+  it('si el servidor ajusta el usuario, todo se vincula con el id que devolvió, nunca con quien tiene ese usuario', async () => {
+    const { db, deps, responsablesDe } = base({ ocupar: 'diego.p' });
+    const r = await ejecutar(await revisar(hoja, await deps.existentes()), deps);
+    expect(r.fallos).toEqual([]);
+    const nuestro = db.perfiles.find((p) => p.usuario === 'diego.p2')!.id;
+    expect(responsablesDe.get('Armar el chasis')).toContain(nuestro);
+    expect(responsablesDe.get('Armar el chasis')).not.toContain('p-ajena');
+    expect(db.membresias.some((m) => m.usuario_id === 'p-ajena')).toBe(false);
+    expect(db.tutorias.some((t) => t.alumno_id === 'p-ajena')).toBe(false);
+    expect(db.tutorias).toContainEqual(expect.objectContaining({ alumno_id: nuestro }));
+  });
+
+  it('respuesta perdida: con el mismo plan, el servidor devuelve ya_creadas y se usan esos ids (sin duplicar ni fichas nuevas)', async () => {
+    const { db, deps, responsablesDe } = base();
+    const plan = await revisar(hoja, await deps.existentes());
+    await ejecutar(plan, deps);
+    const antes = db.perfiles.length;
+    const r = await ejecutar(plan, deps); // plan viejo: aún dice que las cuentas son nuevas
+    expect(db.perfiles).toHaveLength(antes);
+    expect(r.fichas).toEqual([]);
+    expect(r.recuperadas.sort()).toEqual(['ana.l', 'diego.p', 'tutor.diego.p']);
+    expect(r.fallos).toEqual([]);
+    expect(responsablesDe.get('Rutina autónoma')).toEqual([db.perfiles.find((p) => p.usuario === 'ana.l')!.id]);
+  });
+
+  it('si el registro falla al final, la carga y las fichas siguen; el registro solo lleva códigos, no mensajes', async () => {
+    const { deps, registros } = base({ registro: 'con_errores', tarea: 'Rutina autónoma' });
+    const r = await ejecutar(await revisar(hoja, await deps.existentes()), deps);
+    expect(r.registroFallo).toBe(true);
+    expect(r.fichas.length).toBe(3);
+    const ultimo = registros.at(-1) as { fallos: string[] };
+    expect(ultimo.fallos).toEqual(['tareas:TAR-02:conflicto']);
+    expect(JSON.stringify(registros)).not.toMatch(/simulado/);
   });
 });

@@ -23,6 +23,9 @@ describe('Importaciones · registro de lotes', () => {
       expect(await b.falla(quien, `select public.registrar_importacion('${ID}', 'x', 'terminado', '{}'::jsonb)`), quien).toMatch(/Solo el coach principal/);
     }
     expect(await b.falla(U.coach, `select public.registrar_importacion('${ID}', 'x', 'terminado', '{"fichas": [{"password": "cobre-123"}]}'::jsonb)`)).toMatch(/no guarda contraseñas/);
+    expect(await b.falla(U.coach, `select public.registrar_importacion('${ID}', 'x', 'terminado', '{"notas": ["algo"]}'::jsonb)`)).toMatch(/formato no permitido/);
+    expect(await b.falla(U.coach, `select public.registrar_importacion('${ID}', 'x', 'terminado', '{"fallos": [{"msg": "x"}]}'::jsonb)`)).toMatch(/formato no permitido/);
+    expect(await b.falla(U.coach, `select public.registrar_importacion('${ID}', 'x', 'terminado', '{"fallos": ["${'x'.repeat(200)}"]}'::jsonb)`)).toMatch(/formato no permitido/);
     expect(await b.falla(U.coach, `insert into importaciones (id, archivo) values (gen_random_uuid(), 'x')`)).toMatch(/permission denied/);
     expect(await b.falla(null, `select 1 from importaciones`)).toMatch(/permission denied/);
   });
