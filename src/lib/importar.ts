@@ -30,6 +30,8 @@ export type AreaPlan = { fila: number; clave: string; nombre: string; estado: Es
 export type CuentaPlan = {
   fila: number; clave: string; nombre: string; usuario: string; rol: RolCuenta; estado: EstadoFila; id?: string;
   membresias: { clave_area: string; es_lider: boolean }[]; // para alumnos (nuevos o existentes)
+  /** creada en una carga anterior (se reconoció por su solicitud): el registro lo anota como recuperada */
+  recuperada?: { usuario: string };
 };
 /** Alumno ↔ área. 'nueva' en una cuenta nueva se crea junto con la cuenta; 'cambio' = cambia líder/integrante. */
 export type AsignacionPlan = { fila: number; clave_persona: string; clave_area: string; es_lider: boolean; estado: EstadoFila };
@@ -249,6 +251,7 @@ export async function revisar(hoja: Hoja, ex: Existentes, opciones: OpcionesRevi
       problemas = problemas.filter((x) => !quitar.has(x));
       p.estado = 'existente';
       p.id = alta.usuario_id;
+      p.recuperada = { usuario: alta.usuario };
       mal('Cuentas', p.fila, `Ya se creó en una carga anterior como ${alta.usuario}: se usa esa cuenta.`, false);
     });
   }

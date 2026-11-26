@@ -91,7 +91,14 @@ export async function ejecutar(plan: Plan, deps: Deps, avance: (a: Avance) => vo
 
     // ---------- Cuentas: el id sale SOLO de la respuesta del servidor ----------
     const personaId = new Map<string, string>(); // clave → id
-    for (const c of plan.cuentas) if (c.estado === 'existente' && c.id) personaId.set(c.clave.toUpperCase(), c.id);
+    for (const c of plan.cuentas) {
+    if (c.estado !== 'existente' || !c.id) continue;
+    personaId.set(c.clave.toUpperCase(), c.id);
+    if (c.recuperada) {
+      r.recuperadas.push(c.recuperada.usuario);
+      r.filas.push(`cuenta:${c.clave}:recuperada:${c.id}`);
+    }
+  }
     async function alta(c: Plan['cuentas'][number], cuerpo: Record<string, unknown>) {
       const res = await deps.crearCuenta({
         accion: 'crear', solicitud_id: await solicitudCuenta(c),

@@ -197,7 +197,9 @@ describe('Importar · ejecución por etapas', async () => {
     const antes = db.perfiles.length;
     const r2 = await ejecutar(plan, deps);
     expect(r2.fallos).toEqual([]);
-    expect(db.perfiles).toHaveLength(antes); // el tutor ya se creó con Ana en el primer intento: nada nuevo
+    expect(db.perfiles).toHaveLength(antes);
+    expect(r2.recuperadas.sort()).toEqual(['ana.l', 'diego.p2', 'tutor.diego.p']); // las 3 del primer intento se reconocen por su solicitud
+    expect(r2.filas).toContain(`cuenta:ALU-01:recuperada:${nuestro}`); // el tutor ya se creó con Ana en el primer intento: nada nuevo
     expect(responsablesDe.get('Armar el chasis')).toContain(nuestro);
     expect(db.tutorias).toContainEqual(expect.objectContaining({ alumno_id: nuestro }));
     expect(db.membresias.some((m) => m.usuario_id === 'p-ajena')).toBe(false);
