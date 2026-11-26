@@ -87,7 +87,7 @@ export async function ejecutar(plan: Plan, deps: Deps, avance: (a: Avance) => vo
     // Áreas de la app nombradas directamente en otras pestañas
     for (const x of ex.areas) if (!areaId.has(x.nombre.toUpperCase())) areaId.set(x.nombre.toUpperCase(), x.id);
     const idDeArea = (clave: string) => areaId.get(clave.toUpperCase());
-    await registrar('en_curso', { areas: r.creados.areas });
+    await registrar('en_curso', { areas: r.creados.areas, filas: r.filas });
 
     // ---------- Cuentas: el id sale SOLO de la respuesta del servidor ----------
     const personaId = new Map<string, string>(); // clave → id
@@ -134,7 +134,7 @@ export async function ejecutar(plan: Plan, deps: Deps, avance: (a: Avance) => vo
         falla('cuentas', `${a.clave_persona}/${a.clave_area}`, e);
       }
     }
-    await registrar('en_curso', { cuentas: r.creados.cuentas, asignaciones: r.creados.asignaciones });
+    await registrar('en_curso', { cuentas: r.creados.cuentas, asignaciones: r.creados.asignaciones, recuperadas: r.recuperadas, filas: r.filas });
 
     etapa = 'tutorias';
     // ---------- 3. Tutores (se crean con su primer alumno) y tutorías ----------
@@ -172,7 +172,7 @@ export async function ejecutar(plan: Plan, deps: Deps, avance: (a: Avance) => vo
       }
       avance({ etapa: 'tutorias', hechas: tutoresNuevos.length + i + 1, total: tutoresNuevos.length + tutorias.length });
     }
-    await registrar('en_curso', { cuentas: r.creados.cuentas, tutorias: r.creados.tutorias });
+    await registrar('en_curso', { cuentas: r.creados.cuentas, tutorias: r.creados.tutorias, recuperadas: r.recuperadas, filas: r.filas });
 
     etapa = 'tareas';
     // ---------- 4. Tareas ----------

@@ -180,6 +180,9 @@ describe('Importar · ejecución por etapas', async () => {
     const ultimo = registros.at(-1) as { fallos: string[] };
     expect(ultimo.fallos).toEqual(['tareas:TAR-02:conflicto']);
     expect(JSON.stringify(registros)).not.toMatch(/simulado/);
+    // El detalle por fila (clave → id) ya va en los registros intermedios, no solo en el final
+    const intermedio = registros.slice(0, -1).map((x) => (x as { filas?: string[] }).filas ?? []).flat();
+    expect(intermedio.some((x) => /^cuenta:ALU-01:creada:p-/.test(x))).toBe(true);
   });
 
   it('reanudar de verdad: usuario ajustado, respuesta perdida, se cierra la app y se vuelve a subir la hoja', async () => {

@@ -50,7 +50,10 @@ begin
      ) then
     raise exception 'Registro de carga con un formato no permitido.' using errcode = '22023';
   end if;
-  select resumen into v_previo from importaciones where id = p_id for update;
+  -- Un candado por lote ANTES de leer: dos pestañas (o reintentos) no calculan la unión sobre la misma base
+  -- vacía ni se pisan; ninguna escritura confirmada desaparece del registro.
+  perform pg_advisory_xact_lock(hashtextextended('importacion:' || p_id::text, 0));
+  select resumen into v_previo from importaciones where id = p_id;
   select coalesce(jsonb_object_agg(k.clave, (
            select coalesce(jsonb_agg(distinct u.v), '[]'::jsonb)
            from (select jsonb_array_elements(coalesce(v_previo -> k.clave, '[]'::jsonb)) v
