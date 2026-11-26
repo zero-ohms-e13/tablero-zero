@@ -179,6 +179,19 @@ language sql stable security definer set search_path = public as $$
   select p_semana <= public.semana_merida() and p_semana >= least(public.inicio_bitacoras(), public.semana_merida())
 $$;
 
+-- Contenido de una bitácora en forma comparable (textos, ayuda, fecha y evidencias en orden).
+create or replace function public.contenido_bitacora(p_fecha date, p_datos jsonb) returns jsonb
+language sql immutable set search_path = '' as $$
+  select jsonb_build_object(
+    'fecha', p_fecha,
+    'aporte', coalesce(p_datos ->> 'aporte', ''), 'aprendizaje', coalesce(p_datos ->> 'aprendizaje', ''),
+    'siguiente', coalesce(p_datos ->> 'siguiente', ''), 'necesita_ayuda', coalesce((p_datos ->> 'necesita_ayuda')::boolean, false),
+    'texto_libre', coalesce(p_datos ->> 'texto_libre', ''),
+    'evidencias', coalesce((
+      select jsonb_agg(jsonb_build_object('tipo', e ->> 'tipo', 'tarea_id', e ->> 'tarea_id', 'material_id', e ->> 'material_id', 'url', e ->> 'url') order by o)
+      from jsonb_array_elements(coalesce(p_datos -> 'evidencias', '[]'::jsonb)) with ordinality as x(e, o)), '[]'::jsonb))
+$$;
+
 -- Crea o actualiza una bitácora en borrador. p_id lo genera el cliente: el reintento de la misma bitácora
 -- no crea otra. p_version = la que tiene el cliente (0 si es nueva): si no coincide, otra pestaña guardó
 -- antes → 409 y el cliente conserva lo escrito.
@@ -189,6 +202,7 @@ declare
   v_yo uuid := auth.uid();
   v_b bitacoras%rowtype;
   v_semana date := date_trunc('week', p_fecha)::date;
+  v_guardado jsonb;
   e jsonb;
   n int := 0;
 begin
@@ -215,9 +229,29 @@ begin
     if v_b.estado in ('entregada', 'revisada') then
       raise exception 'conflicto: esta bitácora ya se entregó.' using errcode = 'PT409';
     end if;
-    -- (versión 0 contra 1 = el mismo cliente reintentando la creación cuya respuesta se perdió: el id es suyo)
-    if v_b.version <> coalesce(p_version, -1) and not (coalesce(p_version, 0) = 0 and v_b.version = 1) then
+    -- Versión 0 contra 1: el mismo cliente reintentando una creación cuya respuesta se perdió. Solo se acepta
+    -- si el contenido es idéntico (se devuelve la fila tal cual); si cambió, es conflicto y no se pisa nada.
+    if coalesce(p_version, 0) = 0 and v_b.version = 1 then
+      select public.contenido_bitacora(v_b.fecha, jsonb_build_object(
+               'aporte', v_b.aporte, 'aprendizaje', v_b.aprendizaje, 'siguiente', v_b.siguiente,
+               'necesita_ayuda', v_b.necesita_ayuda, 'texto_libre', v_b.texto_libre,
+               'evidencias', coalesce((select jsonb_agg(jsonb_build_object('tipo', x.tipo, 'tarea_id', x.tarea_id, 'material_id', x.material_id, 'url', x.url) order by x.orden)
+                                       from bitacora_evidencias x where x.bitacora_id = v_b.id), '[]'::jsonb)))
+        into v_guardado;
+      if v_guardado = public.contenido_bitacora(p_fecha, p_datos) then
+        return jsonb_build_object('id', v_b.id, 'version', v_b.version);
+      end if;
       raise exception 'conflicto: la bitácora cambió en otra pestaña o dispositivo. Recarga para ver la versión guardada.' using errcode = 'PT409';
+    end if;
+    if v_b.version <> coalesce(p_version, -1) then
+      raise exception 'conflicto: la bitácora cambió en otra pestaña o dispositivo. Recarga para ver la versión guardada.' using errcode = 'PT409';
+    end if;
+    -- Mover un borrador a otra semana respeta el límite de esa semana (bajo el mismo candado)
+    if v_semana <> v_b.semana then
+      perform pg_advisory_xact_lock(hashtextextended('bitacoras:' || v_yo || ':' || v_semana, 0));
+      if (select count(*) from bitacoras where alumno_id = v_yo and semana = v_semana) >= 10 then
+        raise exception 'Esa semana ya tiene el máximo de 10 bitácoras.' using errcode = '22023';
+      end if;
     end if;
     update bitacoras set
       fecha = p_fecha, semana = v_semana,
@@ -229,6 +263,7 @@ begin
     if coalesce(p_version, 0) <> 0 then
       raise exception 'conflicto: la bitácora cambió en otra pestaña o dispositivo. Recarga para ver la versión guardada.' using errcode = 'PT409';
     end if;
+    perform pg_advisory_xact_lock(hashtextextended('bitacoras:' || v_yo || ':' || v_semana, 0));
     if (select count(*) from bitacoras where alumno_id = v_yo and semana = v_semana) >= 10 then
       raise exception 'Llegaste al máximo de 10 bitácoras en una semana.' using errcode = '22023';
     end if;

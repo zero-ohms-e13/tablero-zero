@@ -71,6 +71,21 @@ describe('Bitácora · varias por semana', () => {
     expect(await falla(U.karla, `public.guardar_bitacora('${nuevoId()}', '${ACTUAL}', 0, '${datos()}'::jsonb)`)).toMatch(/máximo de 10/);
   });
 
+  it('con 10 en una semana, mover un borrador de otra semana se rechaza y conserva su fecha original', async () => {
+    // Karla ya tiene 10 esta semana (prueba anterior); un borrador suyo de la semana pasada no puede entrar
+    const otro = await guardar(U.karla, nuevoId(), DIA_PASADA, 0, { aporte: 'de la semana pasada' });
+    expect(await falla(U.karla, `public.guardar_bitacora('${otro.id}', '${HOY}', ${otro.version}, '${datos()}'::jsonb)`)).toMatch(/máximo de 10/);
+    expect((await q<{ fecha: string }>(`select fecha::text from bitacoras where id = '${otro.id}'`))[0].fecha).toBe(DIA_PASADA);
+  });
+
+  it('el reintento de una creación solo se acepta si es idéntico; si el contenido cambió responde 409 y no pisa nada', async () => {
+    const id = nuevoId();
+    await guardar(U.luis, id, HOY, 0, { aporte: 'texto original' });
+    expect((await guardar(U.luis, id, HOY, 0, { aporte: 'texto original' })).version).toBe(1); // idéntico: misma fila
+    expect(await falla(U.luis, `public.guardar_bitacora('${id}', '${HOY}', 0, '${datos({ aporte: 'otro texto' })}'::jsonb)`)).toMatch(/conflicto/);
+    expect((await q<{ aporte: string; version: number }>(`select aporte, version from bitacoras where id = '${id}'`))[0]).toEqual({ aporte: 'texto original', version: 1 });
+  });
+
   it('el id lo pone el cliente: reintentar la creación no duplica; el id de otro alumno no se puede tocar', async () => {
     const id = nuevoId();
     const v1 = await guardar(U.sofia, id, HOY, 0, { aporte: 'primera' });
