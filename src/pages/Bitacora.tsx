@@ -1,13 +1,15 @@
-// Mi bitácora (alumno): una por semana, borrador que se guarda solo y entrega con las tres preguntas.
-// Privada: solo la ven el alumno y el coach. Vence el domingo a las 8 p. m. (hora de Mérida).
+// Mis bitácoras (alumno): varias por semana (una por día de taller), también atrasadas desde el arranque.
+// Cada una es un borrador que se guarda solo y se entrega con las tres preguntas. Privadas: solo las ven
+// el alumno y el coach. El plazo de la semana (domingo 8 p. m. por omisión) lo puede cambiar el coach.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { TextoLibre } from '../components/TextoLibre';
 import { Boton, Cargando, HeaderVino, PantallaCel, TituloSeccion, claseCampo, useToast } from '../components/ui';
 import {
-  ETIQUETA_ESTADO_BITACORA, PREGUNTAS, lunesDe, rangoSemana, semanaAbierta, sumarSemanas, useEntregarBitacora, useGuardarBitacora,
-  useMiBitacora, useMisBitacoras, plazoTexto, usePlazoBitacora, type Bitacora as TBitacora, type DatosBitacora, type EvidenciaBitacora,
+  ETIQUETA_ESTADO_BITACORA, PREGUNTAS, diaBitacora, hoyMerida, lunesDe, rangoSemana, semanaAbierta, sumarSemanas, useEntregarBitacora,
+  useGuardarBitacora, useBitacorasSemana, useInicioBitacoras, useMisBitacoras, plazoTexto, usePlazoBitacora,
+  type Bitacora as TBitacora, type DatosBitacora, type EvidenciaBitacora,
 } from '../lib/bitacoras';
 import { esMia, useTareas } from '../lib/datos';
 import { useMateriales } from '../lib/materiales';
@@ -29,43 +31,67 @@ const deServidor = (b: TBitacora | null | undefined): DatosBitacora =>
       }
     : vacia();
 
+type Respaldo = { id: string; d: DatosBitacora; version: number; at: number; fecha: string; semana: string };
+const lunesDeFecha = (fecha: string) => lunesDe(new Date(`${fecha}T12:00:00-06:00`));
+
 export default function Bitacora() {
   const { perfil } = useSesion();
+  const uid = perfil?.id ?? '';
   const [params, setParams] = useSearchParams();
   const actual = lunesDe();
   const pedida = params.get('semana');
   const lunes = pedida && /^\d{4}-\d{2}-\d{2}$/.test(pedida) && pedida <= actual ? pedida : actual;
-  const q = useMiBitacora(perfil?.id, lunes);
+  const sel = params.get('id'); // bitácora abierta (o una nueva, por su id generado aquí)
+  const q = useBitacorasSemana(perfil?.id, lunes);
   const hist = useMisBitacoras(perfil?.id);
+  const { data: inicio } = useInicioBitacoras();
   const [recargas, setRecargas] = useState(0);
-  const b = q.data;
-  // Misma regla que la base: semana actual y 4 anteriores; una devuelta se corrige aunque sea más antigua
-  const editable = b?.estado === 'devuelta' || (semanaAbierta(lunes) && (!b || b.estado === 'borrador'));
+  const lista = q.data ?? [];
+  const abierta = semanaAbierta(lunes, inicio);
   const { data: vence = new Date() } = usePlazoBitacora(lunes);
   const plazo = plazoTexto(vence);
+  const entregadas = lista.filter((b) => b.estado === 'entregada' || b.estado === 'revisada');
+  // Bitácoras nuevas que solo existen en este teléfono (se escribieron sin conexión y no llegaron al servidor)
+  const locales = uid
+    ? respaldo
+        .listar<Respaldo>(uid, 'bitacora.')
+        // El id de la bitácora va en el nombre del respaldo (bitacora.<id>); valor.id es el de la edición
+        .map((x) => ({ ...x.valor, id: x.nombre.slice('bitacora.'.length) }))
+        .filter((v) => v.semana === lunes && !lista.some((b) => b.id === v.id))
+    : [];
   const salirEditor = useRef<(() => Promise<boolean>) | null>(null);
   const toastP = useToast();
-  // Dentro de la bitácora, cambiar de semana espera a que se confirme el guardado; si falla, se queda aquí
-  async function ir(l: string) {
+  // Moverse dentro de la bitácora espera a que se confirme el guardado; si falla, se queda aquí
+  async function ir(p: { semana?: string; id?: string | null }) {
     if (salirEditor.current && !(await salirEditor.current())) {
-      toastP({ tipo: 'error', titulo: 'No se guardó tu bitácora.', texto: 'Te quedas en esta semana para que no pierdas lo escrito. Toca «Reintentar».' });
+      toastP({ tipo: 'error', titulo: 'No se guardó tu bitácora.', texto: 'Te quedas aquí para que no pierdas lo escrito. Toca «Reintentar».' });
       return;
     }
-    setParams(l === actual ? {} : { semana: l }, { replace: true });
+    const semana = p.semana ?? lunes;
+    const nuevo: Record<string, string> = {};
+    if (semana !== actual) nuevo.semana = semana;
+    if (p.id) nuevo.id = p.id;
+    setParams(nuevo, { replace: true });
   }
+  const nueva = () => void ir({ id: crypto.randomUUID() });
+
+  // Semanas con bitácoras (para ponerse al día o revisar)
+  const semanas = [...new Set((hist.data ?? []).map((h) => h.semana))].filter((x) => x !== lunes);
+  const actualB = sel ? lista.find((b) => b.id === sel) ?? null : null;
+  const localSel = sel ? locales.find((l) => l.id === sel) ?? null : null;
 
   return (
     <PantallaCel>
-      <HeaderVino titulo="Mi bitácora" subtitulo="Solo la ven tú y el coach" atras="/">
+      <HeaderVino titulo="Mis bitácoras" subtitulo="Solo las ven tú y el coach" atras="/">
         <div className="flex items-center gap-2">
-          <button onClick={() => void ir(sumarSemanas(lunes, -1))} disabled={!semanaAbierta(sumarSemanas(lunes, -1))} aria-label="Semana anterior" className="flex h-11 w-11 items-center justify-center rounded-campo border border-crema/35 bg-transparent text-crema disabled:opacity-40">
+          <button onClick={() => void ir({ semana: sumarSemanas(lunes, -1) })} disabled={!semanaAbierta(sumarSemanas(lunes, -1), inicio) && !semanas.includes(sumarSemanas(lunes, -1))} aria-label="Semana anterior" className="flex h-11 w-11 items-center justify-center rounded-campo border border-crema/35 bg-transparent text-crema disabled:opacity-40">
             <Icon name="atras" />
           </button>
           <div className="flex min-w-0 flex-grow flex-col items-center">
             <strong className="font-titulo text-[17px]">Semana del {rangoSemana(lunes)}</strong>
-            <span className="text-xs opacity-90">{lunes === actual ? 'Esta semana' : 'Semana anterior'}</span>
+            <span className="text-xs opacity-90">{lunes === actual ? 'Esta semana' : abierta ? 'Puedes entregar atrasada' : 'Ya no está abierta'}</span>
           </div>
-          <button onClick={() => void ir(sumarSemanas(lunes, 1))} disabled={lunes >= actual} aria-label="Semana siguiente" className="flex h-11 w-11 rotate-180 items-center justify-center rounded-campo border border-crema/35 bg-transparent text-crema disabled:opacity-40">
+          <button onClick={() => void ir({ semana: sumarSemanas(lunes, 1) })} disabled={lunes >= actual} aria-label="Semana siguiente" className="flex h-11 w-11 rotate-180 items-center justify-center rounded-campo border border-crema/35 bg-transparent text-crema disabled:opacity-40">
             <Icon name="atras" />
           </button>
         </div>
@@ -74,41 +100,91 @@ export default function Bitacora() {
       <div className="flex flex-col gap-4 px-4 pt-4">
         {q.isLoading ? <Cargando /> : q.isError ? (
           <p className="m-0 rounded-campo bg-[#F6D6D6] p-3 text-sm text-vino">{(q.error as Error).message}</p>
+        ) : sel ? (
+          <>
+            <button type="button" onClick={() => void ir({ id: null })} className="flex items-center gap-1.5 self-start bg-transparent p-0 text-sm font-semibold text-vino">
+              <Icon name="atras" size={16} /> Bitácoras de esta semana
+            </button>
+            {actualB?.retro && (
+              <section className={`flex flex-col gap-1 rounded-tarjeta p-3.5 ${actualB.estado === 'devuelta' ? 'border-2 border-ambar bg-white' : 'bg-crema'}`}>
+                <strong className="text-sm text-vino">{actualB.estado === 'devuelta' ? 'El coach te pidió corregir' : 'Comentario del coach'}</strong>
+                <p className="m-0 whitespace-pre-line text-sm leading-[1.45]">{actualB.retro}</p>
+              </section>
+            )}
+            {actualB && (actualB.estado === 'entregada' || actualB.estado === 'revisada') ? (
+              <>
+                <span className="text-sm text-tinta-2">Bitácora del {diaBitacora(actualB.fecha)} · {ETIQUETA_ESTADO_BITACORA[actualB.estado]}</span>
+                <Lectura b={actualB} />
+              </>
+            ) : actualB?.estado === 'devuelta' || abierta ? (
+              <Editor
+                key={`${sel}-${recargas}`}
+                id={sel}
+                lunes={lunes}
+                fechaInicial={actualB?.fecha ?? localSel?.fecha ?? (lunes === actual ? hoyMerida() : lunes)}
+                inicial={actualB}
+                fijarFecha={actualB?.estado === 'devuelta'}
+                salirRef={salirEditor}
+                onRecargar={async () => { await q.refetch(); setRecargas((n) => n + 1); }}
+                onEntregada={() => void ir({ id: null })}
+              />
+            ) : (
+              <p className="m-0 text-sm text-tinta-2">Esta semana ya no está abierta para escribir.</p>
+            )}
+          </>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${b && b.estado !== 'borrador' ? 'bg-vino text-crema' : 'bg-crema text-vino'}`}>
-                {ETIQUETA_ESTADO_BITACORA[b?.estado ?? 'pendiente']}
+              <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${entregadas.length ? 'bg-vino text-crema' : 'bg-crema text-vino'}`}>
+                {entregadas.length === 0 ? 'Sin entregar' : entregadas.length === 1 ? '1 entregada' : `${entregadas.length} entregadas`}
               </span>
-              {b?.primera_entrega_at && new Date(b.primera_entrega_at) > vence && <span className="rounded-full bg-urgente-fondo px-3 py-1.5 text-xs font-semibold text-urgente">Entregada tarde</span>}
-              {editable && <span className={`text-xs ${plazo.tono === 'normal' ? 'text-tinta-2' : 'font-semibold text-urgente'}`}>{plazo.texto}</span>}
+              {abierta && <span className={`text-xs ${plazo.tono === 'normal' ? 'text-tinta-2' : 'font-semibold text-urgente'}`}>{plazo.texto}</span>}
             </div>
-            {b?.retro && (
-              <section className={`flex flex-col gap-1 rounded-tarjeta p-3.5 ${b.estado === 'devuelta' ? 'border-2 border-ambar bg-white' : 'bg-crema'}`}>
-                <strong className="text-sm text-vino">{b.estado === 'devuelta' ? 'El coach te pidió corregir' : 'Comentario del coach'}</strong>
-                <p className="m-0 whitespace-pre-line text-sm leading-[1.45]">{b.retro}</p>
-              </section>
+            <p className="m-0 text-xs text-tinta-2">Puedes entregar una por cada día de taller; con una entregada cumples la semana.</p>
+            {lista.length === 0 && locales.length === 0 && (
+              <p className="m-0 text-sm text-tinta-3">{abierta ? 'Todavía no escribes ninguna esta semana.' : 'No escribiste bitácoras esta semana.'}</p>
             )}
-            {editable ? (
-              <Editor key={`${lunes}-${recargas}`} lunes={lunes} inicial={b ?? null} salirRef={salirEditor} onRecargar={async () => { await q.refetch(); setRecargas((n) => n + 1); }} />
-            ) : b ? (
-              <Lectura b={b} />
-            ) : (
-              <p className="m-0 text-sm text-tinta-2">No escribiste bitácora esta semana. Ya no está abierta para escribir.</p>
-            )}
-          </>
-        )}
-
-        {(hist.data?.length ?? 0) > 0 && (
-          <section className="flex flex-col gap-2 pb-4">
-            <TituloSeccion>Semanas anteriores</TituloSeccion>
-            {hist.data!.filter((h) => h.semana !== lunes).map((h) => (
-              <button key={h.id} type="button" onClick={() => void ir(h.semana)} className="flex min-h-tap w-full items-center justify-between gap-2 rounded-campo border border-linea bg-white px-3.5 py-2.5 text-left text-sm text-tinta">
-                <span>Semana del {rangoSemana(h.semana)}</span>
-                <span className="text-xs font-semibold text-vino">{ETIQUETA_ESTADO_BITACORA[h.estado]}</span>
+            {lista.map((b) => (
+              <button key={b.id} type="button" onClick={() => void ir({ id: b.id })} className={`flex min-h-tap w-full items-center gap-3 rounded-tarjeta border bg-white p-3 text-left ${b.estado === 'devuelta' ? 'border-2 border-ambar' : 'border-linea'}`}>
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-campo ${b.estado === 'entregada' || b.estado === 'revisada' ? 'bg-atiempo-fondo text-atiempo' : 'bg-crema text-vino'}`}>
+                  <Icon name={b.estado === 'entregada' || b.estado === 'revisada' ? 'palomita' : 'editar'} size={18} />
+                </span>
+                <span className="flex min-w-0 flex-grow flex-col">
+                  <strong className="text-sm text-tinta">Bitácora del {diaBitacora(b.fecha)}</strong>
+                  <span className="truncate text-xs text-tinta-3">{b.aporte.trim() || 'Sin escribir todavía'}</span>
+                </span>
+                <span className="shrink-0 text-xs font-semibold text-vino">{ETIQUETA_ESTADO_BITACORA[b.estado]}</span>
               </button>
             ))}
-          </section>
+            {locales.map((l) => (
+              <button key={l.id} type="button" onClick={() => void ir({ id: l.id })} className="flex min-h-tap w-full items-center gap-3 rounded-tarjeta border-2 border-ambar bg-white p-3 text-left">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-campo bg-crema text-vino"><Icon name="sinred" size={18} /></span>
+                <span className="flex min-w-0 flex-grow flex-col">
+                  <strong className="text-sm text-tinta">Bitácora del {diaBitacora(l.fecha)}</strong>
+                  <span className="text-xs text-urgente">Solo está en este teléfono: ábrela para guardarla</span>
+                </span>
+              </button>
+            ))}
+            {abierta && (
+              <Boton onClick={nueva}><Icon name="mas" size={18} /> {lista.length ? 'Otra bitácora (otro día de taller)' : 'Escribir bitácora'}</Boton>
+            )}
+            {semanas.length > 0 && (
+              <section className="flex flex-col gap-2 pb-4">
+                <TituloSeccion>Otras semanas</TituloSeccion>
+                {semanas.map((w) => {
+                  const de = (hist.data ?? []).filter((h) => h.semana === w);
+                  const n = de.filter((h) => h.estado === 'entregada' || h.estado === 'revisada').length;
+                  const corregir = de.some((h) => h.estado === 'devuelta');
+                  return (
+                    <button key={w} type="button" onClick={() => void ir({ semana: w })} className="flex min-h-tap w-full items-center justify-between gap-2 rounded-campo border border-linea bg-white px-3.5 py-2.5 text-left text-sm text-tinta">
+                      <span>Semana del {rangoSemana(w)}</span>
+                      <span className={`text-xs font-semibold ${corregir ? 'text-urgente' : 'text-vino'}`}>{corregir ? 'Por corregir' : n ? `${n} entregada${n > 1 ? 's' : ''}` : 'Borrador'}</span>
+                    </button>
+                  );
+                })}
+              </section>
+            )}
+          </>
         )}
       </div>
     </PantallaCel>
@@ -118,12 +194,16 @@ export default function Bitacora() {
 // ---------- Editor con guardado automático ----------
 type EstadoGuardado = 'guardado' | 'cambios' | 'guardando' | 'error' | 'conflicto';
 
-type Respaldo = { id: string; d: DatosBitacora; version: number; at: number };
-
-function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inicial: TBitacora | null; onRecargar: () => Promise<void>; salirRef: { current: (() => Promise<boolean>) | null } }) {
+function Editor({ id, lunes, fechaInicial, inicial, fijarFecha, onRecargar, onEntregada, salirRef }: {
+  id: string; lunes: string; fechaInicial: string; inicial: TBitacora | null; fijarFecha: boolean;
+  onRecargar: () => Promise<void>; onEntregada: () => void; salirRef: { current: (() => Promise<boolean>) | null };
+}) {
   const { perfil: yo } = useSesion();
   const uid = yo?.id ?? '';
-  const clave = `bitacora.${lunes}`;
+  const clave = `bitacora.${id}`;
+  const [fecha, setFecha] = useState(fechaInicial);
+  const fechaRef = useRef(fecha);
+  fechaRef.current = fecha;
   // Si quedó texto sin guardar en este teléfono (red caída al salir, app cerrada), se recupera
   const [recuperado] = useState<Respaldo | null>(() => {
     const x = uid ? respaldo.leer<Respaldo>(uid, clave) : null;
@@ -158,12 +238,16 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
       try {
         const enviado = ultimo.current;
         const respaldoEnviado = idRespaldo.current?.datos === enviado ? idRespaldo.current.id : null;
-        const r = await guardarRpc({ lunes, version: servidor.current.version, datos: enviado });
+        const r = await guardarRpc({ id, fecha: fechaRef.current, version: servidor.current.version, datos: enviado });
         servidor.current = { id: r.id, version: r.version };
         if (ultimo.current === enviado) {
           sucio.current = false; // si escribió mientras guardaba, sigue pendiente
           // Solo si el respaldo guardado es justo lo que se confirmó (otra pestaña pudo escribir uno más nuevo)
-          if (uid && respaldoEnviado) respaldo.borrarSiEs(uid, clave, respaldoEnviado);
+          if (uid) {
+            const r = respaldo.leer<Respaldo>(uid, clave);
+            // También si su contenido es exactamente lo que se confirmó (ya no hay nada pendiente en él)
+            if (r && (r.id === respaldoEnviado || JSON.stringify(r.d) === JSON.stringify(enviado))) respaldo.borrar(uid, clave);
+          }
         }
         setEstado((e) => (e === 'guardando' ? 'guardado' : e));
         setError(null);
@@ -179,15 +263,15 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
     })();
     enCurso.current = p;
     return p;
-  }, [guardarRpc, lunes, uid, clave]);
+  }, [guardarRpc, id, uid, clave]);
 
   // Respaldo local de lo escrito mientras no llegue al servidor
   useEffect(() => {
     if (!sucio.current || !uid) return;
-    const id = crypto.randomUUID();
-    idRespaldo.current = { datos: d, id };
-    respaldo.guardar(uid, clave, { id, d, version: servidor.current.version, at: Date.now() } satisfies Respaldo);
-  }, [d, uid, clave]);
+    const idR = crypto.randomUUID();
+    idRespaldo.current = { datos: d, id: idR };
+    respaldo.guardar(uid, clave, { id: idR, d, version: servidor.current.version, at: Date.now(), fecha, semana: lunesDeFecha(fecha) } satisfies Respaldo);
+  }, [d, fecha, uid, clave]);
 
   // La página pide salir: espera a que se confirme el guardado (true) o avisa que falló (false)
   useEffect(() => {
@@ -234,7 +318,7 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
     if (estado !== 'cambios') return;
     const t = setTimeout(() => void guardarAhora(), 2500);
     return () => clearTimeout(t);
-  }, [d, estado, guardarAhora]);
+  }, [d, fecha, estado, guardarAhora]);
 
   // Rescate ante un conflicto: todo lo escrito en esta pantalla, como texto, al portapapeles
   async function copiarMiTexto() {
@@ -257,6 +341,7 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
     try {
       await entregar.mutateAsync({ id: servidor.current.id!, version: servidor.current.version });
       toast({ titulo: 'Bitácora entregada.', texto: 'El coach ya puede leerla.' });
+      onEntregada();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -273,6 +358,25 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
           <strong className="text-vino">Recuperamos lo que escribiste</strong> y no se había guardado ({haceCuanto(new Date(recuperado.at).toISOString())}). Se guardará en cuanto haya conexión.
         </p>
       )}
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="bit-fecha" className="text-[15px] font-semibold text-vino">¿De qué día es esta bitácora?</label>
+        <input
+          id="bit-fecha"
+          type="date"
+          value={fecha}
+          min={lunes}
+          max={sumarSemanas(lunes, 1) <= hoyMerida() ? new Date(Date.parse(`${lunes}T00:00:00Z`) + 6 * 86400_000).toISOString().slice(0, 10) : hoyMerida()}
+          disabled={fijarFecha}
+          onChange={(e) => {
+            if (!e.target.value) return;
+            setFecha(e.target.value);
+            sucio.current = true;
+            setEstado('cambios');
+          }}
+          className={claseCampo}
+        />
+        <span className="text-xs text-tinta-2">Por ejemplo, el día de taller que vas a contar.</span>
+      </div>
       {PREGUNTAS.map((p, i) => (
         <div key={p.campo} className="flex flex-col gap-1.5">
           <label htmlFor={`bit-${p.campo}`} className="text-[15px] font-semibold text-vino">{i + 1}. {p.titulo}</label>
@@ -282,7 +386,7 @@ function Editor({ lunes, inicial, onRecargar, salirRef }: { lunes: string; inici
       ))}
       <label className="flex min-h-tap items-center gap-2.5 text-sm">
         <input type="checkbox" checked={d.necesita_ayuda} onChange={(e) => cambiar({ necesita_ayuda: e.target.checked })} className="h-5 w-5 accent-[#590202]" />
-        Necesito ayuda del coach con algo de esta semana
+        Necesito ayuda del coach con algo de esto
       </label>
 
       <section className="flex flex-col gap-2 rounded-tarjeta border border-linea bg-white p-3.5">
@@ -413,7 +517,7 @@ export function Lectura({ b }: { b: TBitacora }) {
           <p className="m-0 whitespace-pre-line text-sm leading-[1.45]">{b[p.campo] || '—'}</p>
         </section>
       ))}
-      {b.necesita_ayuda && <p className="m-0 rounded-campo bg-urgente-fondo px-3 py-2 text-sm font-semibold text-urgente">Pidió ayuda del coach esta semana</p>}
+      {b.necesita_ayuda && <p className="m-0 rounded-campo bg-urgente-fondo px-3 py-2 text-sm font-semibold text-urgente">Pidió ayuda del coach</p>}
       {b.texto_libre.trim() && (
         <section className="flex flex-col gap-2 rounded-tarjeta border border-linea bg-white p-3.5">
           <strong className="text-sm text-vino">Bitácora completa</strong>

@@ -1,12 +1,12 @@
 // Bitácoras (coach): quién entregó, quién va atrasado y qué necesita apoyo; leer, comentar y devolver.
 import { useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { LayoutCoach } from '../components/Coach';
 import { Icon } from '../components/Icon';
 import { Avatar, Boton, Campo, Cargando, EmptyState, Sheet, claseCampo, useToast } from '../components/ui';
 import {
-  ETIQUETA_ESTADO_BITACORA, lunesDe, rangoSemana, sumarSemanas, useBitacora, useResumenBitacoras, useRevisarBitacora, usePlazoBitacora, useFijarPlazo, cuandoVence, esOmision, useInicioBitacoras, useFijarInicio,
-  type FilaResumen,
+  ETIQUETA_ESTADO_BITACORA, diaBitacora, lunesDe, rangoSemana, sumarSemanas, useBitacorasSemana, useResumenBitacoras, useRevisarBitacora, usePlazoBitacora, useFijarPlazo, cuandoVence, esOmision, useInicioBitacoras, useFijarInicio,
+  type Bitacora, type FilaResumen,
 } from '../lib/bitacoras';
 import { aInputLocal, deInputLocal, haceCuanto } from '../lib/fechas';
 import { Lectura } from './Bitacora';
@@ -36,7 +36,7 @@ function Seguimiento() {
   const filas = q.data ?? [];
   const cuenta = {
     entregada: filas.filter((f) => f.estado === 'entregada' || f.estado === 'revisada').length,
-    porRevisar: filas.filter((f) => f.estado === 'entregada').length,
+    porRevisar: filas.reduce((n, f) => n + f.por_revisar, 0),
     pendiente: filas.filter((f) => f.estado === 'pendiente' || f.estado === 'devuelta').length,
     atrasada: filas.filter((f) => f.atrasada).length,
     ayuda: filas.filter((f) => f.necesita_ayuda).length,
@@ -132,85 +132,100 @@ function Fila({ f, lunes }: { f: FilaResumen; lunes: string }) {
       <Avatar iniciales={f.iniciales} color={f.color} size={36} />
       <span className="flex min-w-0 flex-grow flex-col">
         <strong className="truncate text-[15px] text-tinta">{f.nombre_visible}</strong>
-        <span className="text-xs text-tinta-3">{f.entregada_at ? `Entregó ${haceCuanto(f.entregada_at)}` : f.estado === 'devuelta' ? 'Corrigiendo' : 'Sin entregar'}</span>
+        <span className="text-xs text-tinta-3">
+          {f.entregadas > 0 ? `${f.entregadas} entregada${f.entregadas > 1 ? 's' : ''}${f.entregada_at ? ` · la última ${haceCuanto(f.entregada_at)}` : ''}` : f.estado === 'devuelta' ? 'Corrigiendo' : 'Sin entregar'}
+        </span>
       </span>
       <span className="flex shrink-0 flex-wrap justify-end gap-1">
         {f.necesita_ayuda && <span className="rounded-full bg-urgente-fondo px-2 py-0.5 text-[11px] font-semibold text-urgente">Pide ayuda</span>}
         {f.tarde && <span className="rounded-full bg-urgente-fondo px-2 py-0.5 text-[11px] font-semibold text-urgente">Tarde</span>}
         {f.atrasada && <span className="rounded-full bg-vino px-2 py-0.5 text-[11px] font-semibold text-crema">Atrasada</span>}
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${f.estado === 'entregada' ? 'bg-ambar text-vino-oscuro' : 'bg-crema text-vino'}`}>{ETIQUETA_ESTADO_BITACORA[f.estado]}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${f.estado === 'entregada' ? 'bg-ambar text-vino-oscuro' : 'bg-crema text-vino'}`}>
+          {f.estado === 'entregada' && f.por_revisar > 0 ? `${f.por_revisar} por revisar` : ETIQUETA_ESTADO_BITACORA[f.estado]}
+        </span>
       </span>
     </>
   );
   const clase = 'flex min-h-tap items-center gap-3 rounded-campo border border-linea bg-white p-2.5 no-underline';
   // Solo se abre lo entregado (o devuelto); un borrador sigue siendo privado del alumno hasta que lo entregue
-  return f.bitacora_id && f.estado !== 'pendiente'
-    ? <Link to={`/coach/bitacoras/${f.bitacora_id}?semana=${lunes}`} className={`${clase} transition-colors duration-150 hover:bg-kanban`}>{contenido}</Link>
+  return f.estado !== 'pendiente'
+    ? <Link to={`/coach/bitacoras/alumno/${f.alumno_id}?semana=${lunes}`} className={`${clase} transition-colors duration-150 hover:bg-kanban`}>{contenido}</Link>
     : <div className={clase}>{contenido}</div>;
 }
 
-export function BitacoraDetalle() {
-  const { id } = useParams();
+/** Las bitácoras entregadas de un alumno en una semana; cada una se revisa o devuelve por separado. */
+export function BitacorasAlumno() {
+  const { alumno } = useParams();
   const [params] = useSearchParams();
-  const nav = useNavigate();
-  const q = useBitacora(id);
-  const { data: venceB = new Date() } = usePlazoBitacora(q.data?.semana ?? lunesDe());
-  const { data: resumen = [] } = useResumenBitacoras(q.data?.semana ?? '', !!q.data);
-  const revisar = useRevisarBitacora();
-  const toast = useToast();
-  const [retro, setRetro] = useState<string | null>(null);
-  const b = q.data;
-  const alumno = resumen.find((r) => r.alumno_id === b?.alumno_id);
+  const lunes = params.get('semana') ?? lunesDe();
+  const q = useBitacorasSemana(alumno, lunes);
+  const { data: vence = new Date() } = usePlazoBitacora(lunes);
+  const { data: resumen = [] } = useResumenBitacoras(lunes);
+  const quien = resumen.find((r) => r.alumno_id === alumno);
   const volver = `/coach/bitacoras${params.get('semana') ? `?semana=${params.get('semana')}` : ''}`;
-  const texto = retro ?? b?.retro ?? '';
-
-  async function guardar(devolver: boolean) {
-    try {
-      await revisar.mutateAsync({ id: b!.id, retro: texto, devolver });
-      toast({ titulo: devolver ? 'Bitácora devuelta.' : 'Bitácora revisada.', texto: devolver ? 'Le llegó un aviso para corregirla.' : undefined });
-      nav(volver);
-    } catch (e) {
-      toast({ tipo: 'error', titulo: 'No se guardó.', texto: (e as Error).message });
-    }
-  }
+  const lista = q.data ?? []; // la base ya oculta los borradores al coach
 
   return (
     <LayoutCoach>
       <Link to={volver} className="flex items-center gap-1.5 self-start text-sm font-semibold"><Icon name="atras" size={16} /> Bitácoras de la semana</Link>
-      {q.isLoading ? <Cargando /> : !b ? (
-        <EmptyState titulo="No encontré esa bitácora" texto="Puede que ya no exista." />
+      <div className="flex items-center gap-3">
+        {quien && <Avatar iniciales={quien.iniciales} color={quien.color} size={44} />}
+        <div className="flex min-w-0 flex-col">
+          <h1 className="m-0 font-titulo text-[22px] font-bold text-vino">{quien?.nombre_visible ?? 'Alumno'}</h1>
+          <span className="text-xs text-tinta-2">Semana del {rangoSemana(lunes)} · {lista.length === 1 ? '1 bitácora' : `${lista.length} bitácoras`}</span>
+        </div>
+      </div>
+      {q.isLoading ? <Cargando /> : lista.length === 0 ? (
+        <EmptyState titulo="Nada entregado esta semana" texto="Los borradores son privados hasta que el alumno los entrega." />
       ) : (
-        <div className="flex max-w-2xl flex-col gap-4">
-          <div className="flex items-center gap-3">
-            {alumno && <Avatar iniciales={alumno.iniciales} color={alumno.color} size={44} />}
-            <div className="flex min-w-0 flex-col">
-              <h1 className="m-0 font-titulo text-[22px] font-bold text-vino">{alumno?.nombre_visible ?? 'Alumno'}</h1>
-              <span className="text-xs text-tinta-2">
-                Semana del {rangoSemana(b.semana)} · {ETIQUETA_ESTADO_BITACORA[b.estado]}
-                {b.primera_entrega_at && new Date(b.primera_entrega_at) > venceB ? ' · entregada tarde' : ''}
-              </span>
-            </div>
-          </div>
-          <Lectura b={b} />
-          {b.estado === 'devuelta' ? (
-            <section className="flex flex-col gap-1 rounded-tarjeta border-2 border-ambar bg-white p-3.5">
-              <strong className="text-sm text-vino">La devolviste para corregir</strong>
-              <p className="m-0 whitespace-pre-line text-sm">{b.retro}</p>
-            </section>
-          ) : (
-            <section className="flex flex-col gap-2 rounded-tarjeta border border-linea bg-white p-3.5">
-              <label htmlFor="retro" className="text-sm font-semibold text-vino">Tu retroalimentación</label>
-              <textarea id="retro" value={texto} maxLength={4000} rows={4} onChange={(e) => setRetro(e.target.value)} placeholder="Qué estuvo bien y qué puede mejorar" className={`${claseCampo} h-auto py-3`} />
-              <span className="text-xs text-tinta-3">Para devolverla escribe qué hay que corregir: el alumno recibe un aviso y puede volver a entregarla.</span>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Boton variante="secundario" disabled={revisar.isPending || !texto.trim()} onClick={() => void guardar(true)}>Devolver para corregir</Boton>
-                <Boton className="flex-grow" disabled={revisar.isPending} onClick={() => void guardar(false)}><Icon name="palomita" size={18} /> {b.estado === 'revisada' ? 'Actualizar revisión' : 'Marcar revisada'}</Boton>
-              </div>
-            </section>
-          )}
+        <div className="flex max-w-2xl flex-col gap-6">
+          {lista.map((b) => <Revision key={b.id} b={b} vence={vence} />)}
         </div>
       )}
     </LayoutCoach>
+  );
+}
+
+function Revision({ b, vence }: { b: Bitacora; vence: Date }) {
+  const revisar = useRevisarBitacora();
+  const toast = useToast();
+  const [retro, setRetro] = useState<string | null>(null);
+  const texto = retro ?? b.retro ?? '';
+  async function guardar(devolver: boolean) {
+    try {
+      await revisar.mutateAsync({ id: b.id, retro: texto, devolver });
+      toast({ titulo: devolver ? 'Bitácora devuelta.' : 'Bitácora revisada.', texto: devolver ? 'Le llegó un aviso para corregirla.' : undefined });
+      setRetro(null);
+    } catch (e) {
+      toast({ tipo: 'error', titulo: 'No se guardó.', texto: (e as Error).message });
+    }
+  }
+  return (
+    <article className="flex flex-col gap-3 border-t-2 border-linea pt-4 first:border-t-0 first:pt-0">
+      <h2 className="m-0 font-titulo text-[18px] font-bold text-tinta">
+        Bitácora del {diaBitacora(b.fecha)}
+        <span className="ml-2 align-middle text-xs font-semibold text-vino">
+          {ETIQUETA_ESTADO_BITACORA[b.estado]}{b.primera_entrega_at && new Date(b.primera_entrega_at) > vence ? ' · entregada tarde' : ''}
+        </span>
+      </h2>
+      <Lectura b={b} />
+      {b.estado === 'devuelta' ? (
+        <section className="flex flex-col gap-1 rounded-tarjeta border-2 border-ambar bg-white p-3.5">
+          <strong className="text-sm text-vino">La devolviste para corregir</strong>
+          <p className="m-0 whitespace-pre-line text-sm">{b.retro}</p>
+        </section>
+      ) : (
+        <section className="flex flex-col gap-2 rounded-tarjeta border border-linea bg-white p-3.5">
+          <label htmlFor={`retro-${b.id}`} className="text-sm font-semibold text-vino">Tu retroalimentación</label>
+          <textarea id={`retro-${b.id}`} value={texto} maxLength={4000} rows={3} onChange={(e) => setRetro(e.target.value)} placeholder="Qué estuvo bien y qué puede mejorar" className={`${claseCampo} h-auto py-3`} />
+          <span className="text-xs text-tinta-3">Para devolverla escribe qué hay que corregir: el alumno recibe un aviso y puede volver a entregarla.</span>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Boton variante="secundario" disabled={revisar.isPending || !texto.trim()} onClick={() => void guardar(true)}>Devolver para corregir</Boton>
+            <Boton className="flex-grow" disabled={revisar.isPending} onClick={() => void guardar(false)}><Icon name="palomita" size={18} /> {b.estado === 'revisada' ? 'Actualizar revisión' : 'Marcar revisada'}</Boton>
+          </div>
+        </section>
+      )}
+    </article>
   );
 }
 

@@ -1,4 +1,4 @@
-// Bitácora personal semanal: lecturas y cambios. La base decide quién ve (autor y coach) y valida todo.
+// Bitácoras (varias por semana, una por día de taller): lecturas y cambios. La base decide quién ve (autor y coach) y valida todo.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from './supabase';
 import { traducirError } from './datos';
@@ -10,7 +10,7 @@ export type EvidenciaBitacora =
   | { tipo: 'material'; material_id: string }
   | { tipo: 'enlace'; url: string; nombre?: string | null };
 export type Bitacora = {
-  id: string; alumno_id: string; semana: string; estado: EstadoBitacora;
+  id: string; alumno_id: string; fecha: string; semana: string; estado: EstadoBitacora;
   aporte: string; aprendizaje: string; siguiente: string; necesita_ayuda: boolean; texto_libre: string;
   version: number; creado_at: string; actualizado_at: string; primera_entrega_at: string | null; entregada_at: string | null;
   devuelta_at: string | null; retro: string | null; retro_por: string | null; retro_at: string | null;
@@ -18,12 +18,12 @@ export type Bitacora = {
 };
 export type DatosBitacora = Pick<Bitacora, 'aporte' | 'aprendizaje' | 'siguiente' | 'necesita_ayuda' | 'texto_libre'> & { evidencias: EvidenciaBitacora[] };
 export type FilaResumen = {
-  alumno_id: string; nombre_visible: string; iniciales: string; color: string; bitacora_id: string | null;
+  alumno_id: string; nombre_visible: string; iniciales: string; color: string; entregadas: number; por_revisar: number;
   estado: 'pendiente' | 'entregada' | 'devuelta' | 'revisada'; tarde: boolean; atrasada: boolean; entregada_at: string | null; necesita_ayuda: boolean; exigible: boolean;
 };
 
 export const PREGUNTAS = [
-  { campo: 'aporte', titulo: '¿Qué hice o aporté esta semana?', ayuda: 'Código, diseño, pruebas, documentación o apoyo a un compañero.' },
+  { campo: 'aporte', titulo: '¿Qué hice o aporté?', ayuda: 'Código, diseño, pruebas, documentación o apoyo a un compañero.' },
   { campo: 'aprendizaje', titulo: '¿Qué aprendí o qué se me dificultó?', ayuda: 'También cuenta un intento que falló si explicas qué descubriste.' },
   { campo: 'siguiente', titulo: '¿Qué voy a hacer después? ¿Necesito ayuda con algo?', ayuda: '' },
 ] as const;
@@ -42,8 +42,18 @@ export function rangoSemana(lunes: string) {
     ? `${a.getUTCDate()} al ${b.getUTCDate()} de ${MESES[b.getUTCMonth()]}`
     : `${a.getUTCDate()} ${MESES[a.getUTCMonth()]} al ${b.getUTCDate()} ${MESES[b.getUTCMonth()]}`;
 }
-/** La base acepta la semana actual y hasta 4 anteriores. */
-export const semanaAbierta = (lunes: string, ahora = new Date()) => lunes <= lunesDe(ahora) && lunes >= sumarSemanas(lunesDe(ahora), -4);
+/** Misma regla que la base: de la primera semana exigible (o la actual, si el arranque es posterior) a hoy. */
+export const semanaAbierta = (lunes: string, inicio: string | undefined, ahora = new Date()) => {
+  const actual = lunesDe(ahora);
+  return lunes <= actual && lunes >= (inicio && inicio < actual ? inicio : actual);
+};
+/** Hoy 'YYYY-MM-DD' en Mérida. */
+export const hoyMerida = () => claveDia(new Date());
+/** "lunes 24 de nov" para la fecha de una bitácora. */
+export function diaBitacora(fecha: string) {
+  const d = new Date(`${fecha}T00:00:00Z`);
+  return `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][d.getUTCDay()]} ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]}`;
+}
 
 export const ETIQUETA_ESTADO_BITACORA: Record<FilaResumen['estado'] | 'borrador', string> = {
   pendiente: 'Pendiente', borrador: 'Borrador', entregada: 'Entregada', devuelta: 'Devuelta para corregir', revisada: 'Revisada',
@@ -56,15 +66,17 @@ function ok<T>(r: { data: T | null; error: { message: string } | null }): T {
 const SELECT = '*, bitacora_evidencias(*)';
 
 // ---------- Alumno ----------
-export const useMiBitacora = (alumno: string | undefined, lunes: string) =>
+const ordenar = (lista: Bitacora[]) => {
+  lista.forEach((b) => b.bitacora_evidencias.sort((x, y) => x.orden - y.orden));
+  return lista.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.creado_at.localeCompare(b.creado_at));
+};
+
+/** Las bitácoras de un alumno en una semana (el alumno ve también sus borradores; el coach, solo lo entregado). */
+export const useBitacorasSemana = (alumno: string | undefined, lunes: string) =>
   useQuery({
-    queryKey: ['bitacora', alumno, lunes],
+    queryKey: ['bitacoras_semana', alumno, lunes],
     enabled: !!alumno,
-    queryFn: async () => {
-      const b = ok(await supabase.from('bitacoras').select(SELECT).eq('alumno_id', alumno!).eq('semana', lunes).maybeSingle()) as Bitacora | null;
-      b?.bitacora_evidencias.sort((x, y) => x.orden - y.orden);
-      return b;
-    },
+    queryFn: async () => ordenar(ok(await supabase.from('bitacoras').select(SELECT).eq('alumno_id', alumno!).eq('semana', lunes)) as Bitacora[]),
   });
 
 export const useMisBitacoras = (alumno: string | undefined) =>
@@ -79,11 +91,11 @@ export const useMisBitacoras = (alumno: string | undefined) =>
 export function useGuardarBitacora() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (v: { lunes: string; version: number; datos: DatosBitacora }) =>
-      ok(await supabase.rpc('guardar_bitacora', { p_semana: v.lunes, p_version: v.version, p_datos: v.datos })) as { id: string; version: number },
+    mutationFn: async (v: { id: string; fecha: string; version: number; datos: DatosBitacora }) =>
+      ok(await supabase.rpc('guardar_bitacora', { p_id: v.id, p_fecha: v.fecha, p_version: v.version, p_datos: v.datos })) as { id: string; version: number },
     // Marca la copia en memoria como vieja (sin recargar ahora): al volver a esa semana se trae la versión guardada
-    onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: ['bitacora'], predicate: (q) => q.queryKey[2] === v.lunes, refetchType: 'none' });
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bitacoras_semana'], refetchType: 'none' });
       qc.invalidateQueries({ queryKey: ['bitacoras'], refetchType: 'none' });
     },
   });
@@ -94,7 +106,7 @@ export function useEntregarBitacora() {
   return useMutation({
     mutationFn: async (v: { id: string; version: number }) => ok(await supabase.rpc('entregar_bitacora', { p_id: v.id, p_version: v.version })) as { id: string; version: number },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bitacora'] });
+      qc.invalidateQueries({ queryKey: ['bitacoras_semana'] });
       qc.invalidateQueries({ queryKey: ['bitacoras'] });
     },
   });
@@ -108,16 +120,7 @@ export const useResumenBitacoras = (lunes: string, activo = true) =>
     queryFn: async () => ok(await supabase.rpc('resumen_bitacoras', { p_semana: lunes })) as FilaResumen[],
   });
 
-export const useBitacora = (id: string | undefined) =>
-  useQuery({
-    queryKey: ['bitacora_id', id],
-    enabled: !!id,
-    queryFn: async () => {
-      const b = ok(await supabase.from('bitacoras').select(SELECT).eq('id', id!).maybeSingle()) as Bitacora | null;
-      b?.bitacora_evidencias.sort((x, y) => x.orden - y.orden);
-      return b;
-    },
-  });
+
 
 export function useRevisarBitacora() {
   const qc = useQueryClient();
@@ -126,8 +129,8 @@ export function useRevisarBitacora() {
       ok(v.devolver
         ? await supabase.rpc('devolver_bitacora', { p_id: v.id, p_nota: v.retro })
         : await supabase.rpc('revisar_bitacora', { p_id: v.id, p_retro: v.retro })),
-    onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: ['bitacora_id', v.id] });
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bitacoras_semana'] });
       qc.invalidateQueries({ queryKey: ['resumen_bitacoras'] });
     },
   });

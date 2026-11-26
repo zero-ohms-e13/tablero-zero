@@ -137,6 +137,15 @@ describe('Bitácora · respaldo local del texto sin guardar', () => {
     expect(respaldo.leer('A', 'bitacora.2026-11-23')).toBeNull();
   });
 
+  it('lista solo los respaldos del usuario activo con el prefijo pedido (bitácoras nuevas sin guardar)', async () => {
+    await activarCacheDe(qc, 'A');
+    respaldo.guardar('A', 'bitacora.id-1', { semana: '2026-11-23' });
+    respaldo.guardar('A', 'otro.id-2', { x: 1 });
+    ls.setItem(RESPALDO + 'B.bitacora.id-3', '{}');
+    expect(respaldo.listar('A', 'bitacora.')).toEqual([{ nombre: 'bitacora.id-1', valor: { semana: '2026-11-23' } }]);
+    expect(respaldo.listar('B', 'bitacora.')).toEqual([]); // B no es el usuario activo
+  });
+
   it('si la app abre sin sesión, no queda ningún respaldo', () => {
     ls.setItem(RESPALDO + 'A.bitacora.2026-11-23', '{}');
     borrarRespaldos();

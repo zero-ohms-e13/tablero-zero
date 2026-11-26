@@ -121,6 +121,23 @@ export const respaldo = {
     respaldo.borrar(uid, nombre);
     return true;
   },
+  /** Respaldos del usuario activo cuyo nombre empieza con `prefijo` (p. ej. bitácoras nuevas sin guardar). */
+  listar<T>(uid: string, prefijo: string): { nombre: string; valor: T }[] {
+    const s = almacen();
+    if (!s || actual?.uid !== uid) return [];
+    const base = RESPALDO + uid + '.';
+    const r: { nombre: string; valor: T }[] = [];
+    for (let i = 0; i < s.length; i++) {
+      const k = s.key(i);
+      if (!k?.startsWith(base + prefijo)) continue;
+      try {
+        r.push({ nombre: k.slice(base.length), valor: JSON.parse(s.getItem(k) ?? 'null') as T });
+      } catch {
+        /* respaldo dañado: se ignora */
+      }
+    }
+    return r;
+  },
   borrar(uid: string, nombre: string) {
     try {
       almacen()?.removeItem(RESPALDO + uid + '.' + nombre);

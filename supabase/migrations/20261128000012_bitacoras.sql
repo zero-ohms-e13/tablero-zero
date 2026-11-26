@@ -1,8 +1,12 @@
 -- Tablero Zero · Bitácora personal semanal (v1)
 --
--- Una bitácora por alumno y semana de Mérida (lunes a domingo). Tres preguntas guía obligatorias para
--- entregar y un texto libre opcional ("Mi bitácora completa"). Evidencias opcionales: una tarea, una
--- publicación de Materiales o un enlace HTTPS, siempre algo que el alumno YA puede ver.
+-- Bitácoras por alumno: cada una lleva la FECHA del día que documenta (p. ej. cada día de taller) y
+-- pertenece a la semana de Mérida (lunes a domingo) de esa fecha. Se pueden entregar VARIAS por semana
+-- (decisión de Jaime); para cumplir la semana basta una entregada. Se pueden entregar ATRASADAS de
+-- cualquier semana desde la primera exigible; quedan marcadas como tarde.
+-- Tres preguntas guía obligatorias para entregar y un texto libre opcional ("Mi bitácora completa").
+-- Evidencias opcionales: una tarea, una publicación de Materiales o un enlace HTTPS, siempre algo que el
+-- alumno YA puede ver.
 --
 -- Privacidad: solo la ven su autor y el coach principal (decisión: el mentor no, por ahora). Tutores,
 -- compañeros y anónimos, no.
@@ -116,7 +120,8 @@ grant execute on function public.fijar_plazo_bitacora(date, timestamptz) to auth
 create table if not exists public.bitacoras (
   id uuid primary key default gen_random_uuid(),
   alumno_id uuid not null references public.profiles(id) on delete cascade,
-  semana date not null check (extract(isodow from semana) = 1),
+  fecha date not null,                                  -- día que documenta (hora de Mérida)
+  semana date not null check (extract(isodow from semana) = 1 and semana = date_trunc('week', fecha)::date),
   estado text not null default 'borrador' check (estado in ('borrador', 'entregada', 'devuelta', 'revisada')),
   aporte text not null default '' check (char_length(aporte) <= 2000),
   aprendizaje text not null default '' check (char_length(aprendizaje) <= 2000),
@@ -131,10 +136,10 @@ create table if not exists public.bitacoras (
   devuelta_at timestamptz,
   retro text check (retro is null or char_length(retro) <= 4000),
   retro_por uuid references public.profiles(id) on delete set null,
-  retro_at timestamptz,
-  unique (alumno_id, semana)
+  retro_at timestamptz
 );
 create index if not exists bitacoras_semana on public.bitacoras (semana);
+create index if not exists bitacoras_alumno_semana on public.bitacoras (alumno_id, semana);
 
 create table if not exists public.bitacora_evidencias (
   id uuid primary key default gen_random_uuid(),
@@ -167,39 +172,55 @@ create policy bitev_select on public.bitacora_evidencias for select to authentic
 );
 
 -- ---------- RPC del alumno ----------
--- Guarda el borrador de la semana (crea o actualiza). p_version = la que tiene el cliente (0 si es nueva):
--- si no coincide, otra pestaña guardó antes → 409 y el cliente conserva lo escrito.
+-- Ventana para escribir: desde la primera semana exigible (o la actual, si el arranque es posterior) hasta
+-- hoy. Una bitácora DEVUELTA por el coach siempre se puede corregir. La app aplica la misma regla.
+create or replace function public.semana_abierta_bitacora(p_semana date) returns boolean
+language sql stable security definer set search_path = public as $$
+  select p_semana <= public.semana_merida() and p_semana >= least(public.inicio_bitacoras(), public.semana_merida())
+$$;
+
+-- Crea o actualiza una bitácora en borrador. p_id lo genera el cliente: el reintento de la misma bitácora
+-- no crea otra. p_version = la que tiene el cliente (0 si es nueva): si no coincide, otra pestaña guardó
+-- antes → 409 y el cliente conserva lo escrito.
 -- p_datos: { aporte, aprendizaje, siguiente, necesita_ayuda, texto_libre, evidencias: [{tipo, tarea_id|material_id|url, nombre}] }
-create or replace function public.guardar_bitacora(p_semana date, p_version int, p_datos jsonb) returns jsonb
+create or replace function public.guardar_bitacora(p_id uuid, p_fecha date, p_version int, p_datos jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
   v_yo uuid := auth.uid();
   v_b bitacoras%rowtype;
-  v_actual date := public.semana_merida();
+  v_semana date := date_trunc('week', p_fecha)::date;
   e jsonb;
   n int := 0;
 begin
   if v_yo is null or not public.es_alumno() then
     raise exception 'Solo los alumnos escriben bitácora.' using errcode = '42501';
   end if;
-  if p_semana is null or extract(isodow from p_semana) <> 1 or p_semana > v_actual then
+  if p_id is null or p_fecha is null or p_fecha > (now() at time zone 'America/Merida')::date then
+    raise exception 'La fecha de la bitácora no puede ser futura.' using errcode = '22023';
+  end if;
+
+  select * into v_b from bitacoras where id = p_id for update;
+  if found and v_b.alumno_id <> v_yo then
+    raise exception 'No tienes permiso para modificar esa bitácora.' using errcode = '42501';
+  end if;
+  -- Ventana: una devuelta se corrige siempre (en su semana original); las demás, dentro de la ventana
+  if found and v_b.estado = 'devuelta' then
+    v_semana := v_b.semana;
+    p_fecha := v_b.fecha;
+  elsif not public.semana_abierta_bitacora(v_semana) then
     raise exception 'Esa semana no está abierta para escribir.' using errcode = '22023';
   end if;
 
-  select * into v_b from bitacoras where alumno_id = v_yo and semana = p_semana for update;
-  -- Ventana: semana actual y hasta 4 anteriores; una bitácora DEVUELTA por el coach se puede corregir
-  -- aunque sea más antigua (si no, la devolución no tendría salida). La app aplica la misma regla.
-  if p_semana < v_actual - 28 and not (found and v_b.estado = 'devuelta') then
-    raise exception 'Esa semana no está abierta para escribir.' using errcode = '22023';
-  end if;
   if found then
     if v_b.estado in ('entregada', 'revisada') then
       raise exception 'conflicto: esta bitácora ya se entregó.' using errcode = 'PT409';
     end if;
-    if v_b.version <> coalesce(p_version, -1) then
+    -- (versión 0 contra 1 = el mismo cliente reintentando la creación cuya respuesta se perdió: el id es suyo)
+    if v_b.version <> coalesce(p_version, -1) and not (coalesce(p_version, 0) = 0 and v_b.version = 1) then
       raise exception 'conflicto: la bitácora cambió en otra pestaña o dispositivo. Recarga para ver la versión guardada.' using errcode = 'PT409';
     end if;
     update bitacoras set
+      fecha = p_fecha, semana = v_semana,
       aporte = coalesce(p_datos ->> 'aporte', ''), aprendizaje = coalesce(p_datos ->> 'aprendizaje', ''),
       siguiente = coalesce(p_datos ->> 'siguiente', ''), necesita_ayuda = coalesce((p_datos ->> 'necesita_ayuda')::boolean, false),
       texto_libre = coalesce(p_datos ->> 'texto_libre', ''), version = version + 1, actualizado_at = now()
@@ -208,8 +229,11 @@ begin
     if coalesce(p_version, 0) <> 0 then
       raise exception 'conflicto: la bitácora cambió en otra pestaña o dispositivo. Recarga para ver la versión guardada.' using errcode = 'PT409';
     end if;
-    insert into bitacoras (alumno_id, semana, aporte, aprendizaje, siguiente, necesita_ayuda, texto_libre)
-    values (v_yo, p_semana, coalesce(p_datos ->> 'aporte', ''), coalesce(p_datos ->> 'aprendizaje', ''),
+    if (select count(*) from bitacoras where alumno_id = v_yo and semana = v_semana) >= 10 then
+      raise exception 'Llegaste al máximo de 10 bitácoras en una semana.' using errcode = '22023';
+    end if;
+    insert into bitacoras (id, alumno_id, fecha, semana, aporte, aprendizaje, siguiente, necesita_ayuda, texto_libre)
+    values (p_id, v_yo, p_fecha, v_semana, coalesce(p_datos ->> 'aporte', ''), coalesce(p_datos ->> 'aprendizaje', ''),
             coalesce(p_datos ->> 'siguiente', ''), coalesce((p_datos ->> 'necesita_ayuda')::boolean, false),
             coalesce(p_datos ->> 'texto_libre', ''))
     returning * into v_b;
@@ -286,7 +310,7 @@ end $$;
 
 create or replace function public.devolver_bitacora(p_id uuid, p_nota text) returns void
 language plpgsql security definer set search_path = public as $$
-declare v_alumno uuid; v_semana date;
+declare v_alumno uuid; v_fecha date;
 begin
   if not public.es_coach_principal() then
     raise exception 'Solo el coach devuelve bitácoras.' using errcode = '42501';
@@ -297,41 +321,55 @@ begin
   update bitacoras set estado = 'devuelta', retro = btrim(p_nota), retro_por = auth.uid(), retro_at = now(),
          devuelta_at = now(), version = version + 1, actualizado_at = now()
    where id = p_id and estado in ('entregada', 'revisada')
-   returning alumno_id, semana into v_alumno, v_semana;
+   returning alumno_id, fecha into v_alumno, v_fecha;
   if not found then
     raise exception 'conflicto: solo se devuelve una bitácora entregada.' using errcode = 'PT409';
   end if;
   insert into avisos (usuario_id, tipo, titulo, detalle)
-  values (v_alumno, 'bitacora', 'Tu bitácora volvió para corregir', 'Semana del ' || to_char(v_semana, 'DD/MM') || ': ' || left(btrim(p_nota), 120));
+  values (v_alumno, 'bitacora', 'Tu bitácora volvió para corregir', 'Bitácora del ' || to_char(v_fecha, 'DD/MM') || ': ' || left(btrim(p_nota), 120));
 end $$;
 
--- Seguimiento de una semana: todos los alumnos activos, con o sin bitácora.
--- estado 'pendiente' = sin bitácora o solo borrador; atrasada = pendiente o devuelta después del plazo.
+-- Seguimiento de una semana: todos los alumnos activos, con cuántas bitácoras entregaron.
+-- estado: pendiente (ninguna entregada) · devuelta (alguna por corregir) · entregada (alguna por revisar)
+-- · revisada (todas revisadas). tarde = la PRIMERA entrega de la semana llegó después del plazo.
+-- atrasada = semana exigible, ninguna entregada y el plazo ya pasó.
 create or replace function public.resumen_bitacoras(p_semana date)
-returns table (alumno_id uuid, nombre_visible text, iniciales text, color text, bitacora_id uuid, estado text,
-               tarde boolean, atrasada boolean, entregada_at timestamptz, necesita_ayuda boolean, exigible boolean)
+returns table (alumno_id uuid, nombre_visible text, iniciales text, color text, estado text, entregadas int,
+               por_revisar int, tarde boolean, atrasada boolean, entregada_at timestamptz, necesita_ayuda boolean, exigible boolean)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.es_coach_principal() then
     raise exception 'Solo el coach ve el seguimiento.' using errcode = '42501';
   end if;
   return query
-  select p.id, p.nombre_visible, p.iniciales, p.color, b.id,
-         case when b.id is null or b.estado = 'borrador' then 'pendiente' else b.estado end,
-         coalesce(b.primera_entrega_at > public.vence_bitacora(p_semana), false),
-         -- Atrasada solo en semanas exigibles (desde el arranque que fijó el coach)
-         p_semana >= public.inicio_bitacoras() and (b.id is null or b.estado in ('borrador', 'devuelta')) and now() > public.vence_bitacora(p_semana),
-         b.entregada_at, coalesce(b.necesita_ayuda and b.estado <> 'borrador', false),
+  with b as (
+    select x.alumno_id,
+           count(*) filter (where x.estado in ('entregada', 'revisada'))::int as entregadas,
+           count(*) filter (where x.estado = 'devuelta')::int as devueltas,
+           count(*) filter (where x.estado = 'entregada')::int as por_revisar,
+           min(x.primera_entrega_at) filter (where x.estado <> 'borrador') as primera,
+           max(x.entregada_at) filter (where x.estado <> 'borrador') as ultima,
+           bool_or(x.necesita_ayuda and x.estado <> 'borrador') as ayuda
+    from bitacoras x where x.semana = p_semana group by x.alumno_id
+  )
+  select p.id, p.nombre_visible, p.iniciales, p.color,
+         case when coalesce(b.devueltas, 0) > 0 then 'devuelta'
+              when coalesce(b.entregadas, 0) = 0 then 'pendiente'
+              when b.por_revisar > 0 then 'entregada' else 'revisada' end,
+         coalesce(b.entregadas, 0), coalesce(b.por_revisar, 0),
+         coalesce(b.primera > public.vence_bitacora(p_semana), false),
+         p_semana >= public.inicio_bitacoras() and coalesce(b.entregadas, 0) = 0 and now() > public.vence_bitacora(p_semana),
+         b.ultima, coalesce(b.ayuda, false),
          p_semana >= public.inicio_bitacoras()
   from profiles p
-  left join bitacoras b on b.alumno_id = p.id and b.semana = p_semana
+  left join b on b.alumno_id = p.id
   where p.rol_global = 'alumno' and p.activo
   order by p.nombre_visible;
 end $$;
 
-revoke execute on function public.guardar_bitacora(date, int, jsonb), public.entregar_bitacora(uuid, int),
+revoke execute on function public.guardar_bitacora(uuid, date, int, jsonb), public.entregar_bitacora(uuid, int), public.semana_abierta_bitacora(date),
   public.revisar_bitacora(uuid, text), public.devolver_bitacora(uuid, text), public.resumen_bitacoras(date),
   public.puede_ver_bitacora(uuid, text), public.vence_bitacora(date) from anon, public;
-grant execute on function public.guardar_bitacora(date, int, jsonb), public.entregar_bitacora(uuid, int),
+grant execute on function public.guardar_bitacora(uuid, date, int, jsonb), public.entregar_bitacora(uuid, int), public.semana_abierta_bitacora(date),
   public.revisar_bitacora(uuid, text), public.devolver_bitacora(uuid, text), public.resumen_bitacoras(date),
   public.puede_ver_bitacora(uuid, text), public.vence_bitacora(date) to authenticated;
