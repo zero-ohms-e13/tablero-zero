@@ -8,7 +8,7 @@ import { Avatar, Boton, Campo, Cargando, EmptyState, HeaderVino, PantallaCel, Sh
 import { useAreas, useTareas } from '../lib/datos';
 import { haceCuanto } from '../lib/fechas';
 import {
-  MAX_ADJUNTOS, claseDe, enlaceArchivo, leerCodigo, quitarRegistrado, sitioDe, useComentarMaterial, useComentariosMaterial,
+  MAX_ADJUNTOS, abrirArchivo, claseDe, leerCodigo, limpiarMateriales, useFotoMaterial, type InformeLimpieza, quitarRegistrado, sitioDe, useComentarMaterial, useComentariosMaterial,
   useEditarMaterial, useMateriales, usePublicarMaterial, useRetirarComentario, useRetirarMaterial, validarArchivo,
   type ArchivoPendiente, type Borrador,
 } from '../lib/materiales';
@@ -20,7 +20,7 @@ const textoCategoria = (c: CategoriaMaterial) => CATEGORIAS_MATERIAL.find((x) =>
 const nuevoId = () => crypto.randomUUID();
 
 export default function Materiales() {
-  const { esCoach } = useSesion();
+  const { esCoach, esCoachPrincipal } = useSesion();
   const q = useMateriales();
   const { data: areas = [] } = useAreas();
   const [filtro, setFiltro] = useState<Filtro>('todo');
@@ -68,7 +68,7 @@ export default function Materiales() {
     />
   ) : (
     <div className="flex flex-col gap-3">
-      {lista.map((m) => <TarjetaMaterial key={m.id} m={m} autor={q.data!.autores[m.autor_id]} fotos={q.data!.fotos} areaNombre={areas.find((a) => a.id === m.area_id)?.nombre} />)}
+      {lista.map((m) => <TarjetaMaterial key={m.id} m={m} autor={q.data!.autores[m.autor_id]} areaNombre={areas.find((a) => a.id === m.area_id)?.nombre} />)}
     </div>
   );
 
@@ -84,7 +84,7 @@ export default function Materiales() {
           </div>
           <Boton onClick={() => setNueva(true)} alto={44}><Icon name="mas" size={18} /> Publicar</Boton>
         </div>
-        <div className="flex max-w-2xl flex-col gap-4">{filtros}{feed}</div>
+        <div className="flex max-w-2xl flex-col gap-4">{esCoachPrincipal && <Limpieza />}{filtros}{feed}</div>
         {hoja}
       </LayoutCoach>
     );
@@ -104,8 +104,94 @@ export default function Materiales() {
   );
 }
 
+// ---------- Limpieza (solo coach principal) ----------
+const pl = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+const mb = (b: number) => (b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
+/** Borradores sin actividad por 30 días y archivos que nunca se registraron. Primero se simula; borrar es aparte. */
+function Limpieza() {
+  const toast = useToast();
+  const [abierto, setAbierto] = useState(false);
+  const [informe, setInforme] = useState<InformeLimpieza | null>(null);
+  const [ocupado, setOcupado] = useState<'simular' | 'borrar' | null>(null);
+  const [confirmar, setConfirmar] = useState(false);
+  async function correr(modo: 'simular' | 'borrar') {
+    setOcupado(modo);
+    try {
+      const r = await limpiarMateriales(modo);
+      setInforme(r);
+      setConfirmar(false);
+      if (modo === 'borrar') toast({ titulo: 'Limpieza hecha.', texto: `${pl(r.hecho?.borradores ?? 0, 'borrador', 'borradores')} y ${pl(r.hecho?.archivos ?? 0, 'archivo', 'archivos')} fuera (${mb(r.hecho?.bytes ?? 0)}).` });
+    } catch (e) {
+      toast({ tipo: 'error', titulo: 'No se pudo.', texto: (e as Error).message });
+    } finally {
+      setOcupado(null);
+    }
+  }
+  const nada = informe && informe.borradores + informe.huerfanos === 0;
+  return (
+    <>
+      <button onClick={() => { setAbierto(true); void correr('simular'); }} className="flex items-center gap-2 self-start rounded-full border border-linea-campo bg-white px-3.5 py-2 text-[13px] font-semibold text-vino">
+        <Icon name="basura" size={16} /> Limpieza de borradores
+      </button>
+      <Sheet abierto={abierto} onCerrar={() => setAbierto(false)} titulo="Limpieza de borradores">
+        <p className="m-0 text-sm text-tinta-2">Se quitan los borradores sin actividad en {informe?.dias ?? 30} días y los archivos que alguien subió pero nunca quedaron en una publicación. Lo publicado no se toca.</p>
+        {ocupado === 'simular' && !informe && <Cargando texto="Revisando…" />}
+        {informe && (
+          <div className="flex flex-col gap-1 rounded-campo bg-kanban p-3 text-sm" aria-live="polite">
+            {informe.hecho ? (
+              <>
+                <strong className="text-vino">Listo</strong>
+                <span>{pl(informe.hecho.borradores, 'borrador', 'borradores')} y {pl(informe.hecho.archivos, 'archivo', 'archivos')} fuera ({mb(informe.hecho.bytes)}).</span>
+                {informe.hecho.omitidos > 0 && <span className="text-xs text-tinta-3">{informe.hecho.omitidos} se dejaron porque alguien los volvió a usar.</span>}
+                {informe.hecho.errores > 0 && <span className="text-xs font-semibold text-vino">{informe.hecho.errores} no se pudieron borrar; se reintentan la próxima vez.</span>}
+              </>
+            ) : nada ? (
+              <span>No hay nada que limpiar.</span>
+            ) : (
+              <>
+                <strong className="text-vino">Simulacro: no se ha borrado nada</strong>
+                <span>{pl(informe.borradores, 'borrador abandonado', 'borradores abandonados')} y {pl(informe.huerfanos, 'archivo suelto', 'archivos sueltos')}: {pl(informe.archivos, 'archivo', 'archivos')}, {mb(informe.bytes)}.</span>
+                {informe.quedan && <span className="text-xs text-tinta-3">Hay más; se limpian por tandas de 200.</span>}
+              </>
+            )}
+          </div>
+        )}
+        {informe && !nada && !informe.hecho && (confirmar ? (
+          <div className="flex gap-2">
+            <Boton variante="secundario" onClick={() => setConfirmar(false)}>Cancelar</Boton>
+            <Boton className="flex-grow" disabled={!!ocupado} onClick={() => void correr('borrar')}>{ocupado === 'borrar' ? 'Borrando…' : 'Sí, borrar'}</Boton>
+          </div>
+        ) : (
+          <Boton variante="fantasma" disabled={!!ocupado} onClick={() => setConfirmar(true)}>Borrar ahora</Boton>
+        ))}
+      </Sheet>
+    </>
+  );
+}
+
 // ---------- Tarjeta (publicación) ----------
-function TarjetaMaterial({ m, autor, fotos, areaNombre }: { m: Material; autor?: AutorMaterial; fotos: Record<string, string>; areaNombre?: string }) {
+/** Foto privada: se pide a la Edge Function (permiso revisado en cada apertura); el objectURL se libera al salir. */
+function FotoMaterial({ ruta, nombre, sola }: { ruta: string; nombre: string; sola: boolean }) {
+  const { data: blob, isError } = useFotoMaterial(ruta);
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!blob) return;
+    const u = URL.createObjectURL(blob);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [blob]);
+  if (!url) {
+    return (
+      <span className={`flex aspect-square items-center justify-center text-tinta-3 ${isError ? '' : 'animate-pulse'}`}>
+        <Icon name="imagen" size={28} />
+        {isError && <span className="sr-only">La foto ya no está disponible</span>}
+      </span>
+    );
+  }
+  return <img src={url} alt={nombre} className={`block w-full object-cover ${sola ? 'max-h-[420px]' : 'aspect-square'}`} />;
+}
+
+function TarjetaMaterial({ m, autor, areaNombre }: { m: Material; autor?: AutorMaterial; areaNombre?: string }) {
   const { perfil, esCoach } = useSesion();
   const { data: tareas = [] } = useTareas();
   const [verComentarios, setVerComentarios] = useState(false);
@@ -121,7 +207,7 @@ function TarjetaMaterial({ m, autor, fotos, areaNombre }: { m: Material; autor?:
 
   async function abrir(a: AdjuntoMaterial, descargar = false) {
     try {
-      window.open(await enlaceArchivo(a, descargar), '_blank', 'noopener,noreferrer');
+      await abrirArchivo(a, descargar);
     } catch (e) {
       toast({ tipo: 'error', titulo: 'No se pudo abrir.', texto: (e as Error).message });
     }
@@ -159,11 +245,7 @@ function TarjetaMaterial({ m, autor, fotos, areaNombre }: { m: Material; autor?:
         <div className={`grid gap-1.5 overflow-hidden rounded-campo ${imagenes.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {imagenes.map((a) => (
             <button key={a.id} onClick={() => abrir(a)} className="block bg-kanban p-0" aria-label={`Ver foto ${a.nombre}`}>
-              {fotos[a.ruta!] ? (
-                <img src={fotos[a.ruta!]} alt={a.nombre} loading="lazy" className={`block w-full object-cover ${imagenes.length === 1 ? 'max-h-[420px]' : 'aspect-square'}`} />
-              ) : (
-                <span className="flex aspect-square items-center justify-center text-tinta-3"><Icon name="imagen" size={28} /></span>
-              )}
+              <FotoMaterial ruta={a.ruta!} nombre={a.nombre} sola={imagenes.length === 1} />
             </button>
           ))}
         </div>

@@ -2,13 +2,11 @@
 // Toda escritura pasa por RPC; el cliente solo sube los archivos a Storage y luego los registra.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import imageCompression from 'browser-image-compression';
-import { supabase } from './supabase';
+import { FUNCIONES, supabase } from './supabase';
 import { traducirError } from './datos';
 import type { AdjuntoMaterial, AutorMaterial, CategoriaMaterial, ComentarioMaterial, Material } from './tipos';
 
 const BUCKET = 'materiales';
-/** Vigencia de los enlaces firmados de fotos y descargas (la RLS se revisa al firmar). */
-export const VIGENCIA_FIRMA = 30 * 60;
 export const MAX_ADJUNTOS = 10;
 export const LIMITES = { imagen: 1024 * 1024, pdf: 10 * 1024 * 1024, codigo: 1024 * 1024 } as const;
 export const EXT_CODIGO = ['ino', 'cpp', 'c', 'h', 'hpp', 'py', 'java', 'js', 'ts', 'json', 'md', 'txt', 'csv', 'yaml', 'yml'];
@@ -19,7 +17,7 @@ function ok<T>(r: { data: T | null; error: { message: string } | null }): T {
 }
 
 // ---------- Lecturas ----------
-export type Feed = { materiales: Material[]; autores: Record<string, AutorMaterial>; fotos: Record<string, string> };
+export type Feed = { materiales: Material[]; autores: Record<string, AutorMaterial> };
 
 export const useMateriales = () =>
   useQuery({
@@ -36,14 +34,7 @@ export const useMateriales = () =>
       ]);
       const materiales = (ok(m) as Material[]).map((x) => ({ ...x, material_adjuntos: [...x.material_adjuntos].sort((p, q) => p.orden - q.orden) }));
       const autores = Object.fromEntries((ok(a) as AutorMaterial[]).map((p) => [p.id, p]));
-      // Fotos privadas: URL firmada (Storage vuelve a revisar el permiso al firmar)
-      const rutas = materiales.flatMap((x) => x.material_adjuntos).filter((j) => j.clase === 'imagen' && j.ruta).map((j) => j.ruta!);
-      const fotos: Record<string, string> = {};
-      if (rutas.length) {
-        const { data } = await supabase.storage.from(BUCKET).createSignedUrls(rutas, VIGENCIA_FIRMA);
-        data?.forEach((d, i) => d.signedUrl && (fotos[rutas[i]] = d.signedUrl));
-      }
-      return { materiales, autores, fotos };
+      return { materiales, autores };
     },
     staleTime: 60_000,
   });
@@ -56,18 +47,93 @@ export const useComentariosMaterial = (material: string, activo: boolean) =>
       ok(await supabase.from('material_comentarios').select('*').eq('material_id', material).order('creado_at')) as ComentarioMaterial[],
   });
 
-/** Enlace firmado para abrir o descargar un archivo (con su nombre original al descargar). */
-export async function enlaceArchivo(a: AdjuntoMaterial, descargar = false) {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(a.ruta!, VIGENCIA_FIRMA, descargar ? { download: a.nombre } : undefined);
-  if (error || !data) throw new Error(traducirError(error?.message ?? 'No se pudo abrir el archivo.'));
-  return data.signedUrl;
+/**
+ * Pide un archivo a la Edge Function archivo-material, que revisa el permiso en CADA apertura y responde sin
+ * caché: si la publicación se retiró, ya no sale. No hay URL firmadas que sigan sirviendo después.
+ */
+export async function pedirArchivo(ruta: string, descargar = false): Promise<Blob> {
+  const { data } = await supabase.auth.getSession();
+  let r: Response;
+  try {
+    r = await fetch(`${FUNCIONES}/archivo-material`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
+      },
+      body: JSON.stringify({ ruta, descargar }),
+    });
+  } catch {
+    throw new Error('Sin internet. Intenta cuando vuelva la conexión.');
+  }
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(j.error ?? 'No se pudo abrir el archivo.');
+  }
+  return r.blob();
+}
+
+/** Abre (o descarga con su nombre) un archivo. La pestaña se abre antes de pedirlo para que el navegador no la bloquee. */
+export async function abrirArchivo(a: AdjuntoMaterial, descargar = false) {
+  const ventana = descargar ? null : window.open('', '_blank');
+  try {
+    const url = URL.createObjectURL(await pedirArchivo(a.ruta!, descargar));
+    if (descargar) {
+      const enlace = document.createElement('a');
+      enlace.href = url;
+      enlace.download = a.nombre;
+      enlace.click();
+    } else if (ventana) {
+      ventana.opener = null;
+      ventana.location.href = url;
+    } else {
+      window.location.assign(url);
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    ventana?.close();
+    throw e;
+  }
+}
+
+/** Foto privada para mostrar en la tarjeta. Se vuelve a pedir al recargar el feed (sin caché persistente). */
+export const useFotoMaterial = (ruta: string | null) =>
+  useQuery({
+    queryKey: ['foto-material', ruta],
+    enabled: !!ruta,
+    queryFn: () => pedirArchivo(ruta!),
+    staleTime: 60_000,
+    gcTime: 60_000,
+    retry: 1,
+  });
+
+// ---------- Limpieza de borradores abandonados (solo coach principal) ----------
+export type InformeLimpieza = {
+  modo: 'simular' | 'borrar'; dias: number; borradores: number; huerfanos: number; archivos: number; bytes: number; quedan: boolean;
+  hecho?: { borradores: number; archivos: number; bytes: number; omitidos: number; errores: number };
+};
+export async function limpiarMateriales(modo: 'simular' | 'borrar'): Promise<InformeLimpieza> {
+  const { data } = await supabase.auth.getSession();
+  let r: Response;
+  try {
+    r = await fetch(`${FUNCIONES}/limpiar-materiales`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? '' },
+      body: JSON.stringify({ modo }),
+    });
+  } catch {
+    throw new Error('Sin internet. Intenta cuando vuelva la conexión.');
+  }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error ?? 'No se pudo revisar la limpieza.');
+  return j as InformeLimpieza;
 }
 
 /** Texto de un archivo de código para mostrarlo (nunca se ejecuta). No va a la caché persistente. */
 export async function leerCodigo(a: AdjuntoMaterial) {
-  const r = await fetch(await enlaceArchivo(a));
-  if (!r.ok) throw new Error('No se pudo leer el archivo.');
-  return r.text();
+  return (await pedirArchivo(a.ruta!)).text();
 }
 
 // ---------- Preparar archivos (en el teléfono, antes de subir) ----------

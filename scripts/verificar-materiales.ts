@@ -1,10 +1,14 @@
-// Materiales del equipo · prueba de integración con Auth, PostgREST y Storage REALES en un proyecto
-// Supabase DE PRUEBAS (con el seed de demo y la migración 20261127000011 aplicada).
+// Materiales del equipo · prueba de integración con Auth, PostgREST, Storage y Edge Functions REALES en un
+// proyecto Supabase DE PRUEBAS (seed de demo y migraciones 20261127000011 y 20261201000015 aplicadas; funciones
+// archivo-material y limpiar-materiales desplegadas).
 // Uso: VERIFICAR_DESTINO=pruebas ENV_PRUEBAS=<ruta al .env del proyecto de pruebas> npx tsx scripts/verificar-materiales.ts
 // No imprime llaves ni contraseñas. Borra todo lo que crea (filas y archivos).
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config } from 'dotenv';
 import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
+// @ts-expect-error módulo .mjs sin tipos
+import { destino, pg } from './respaldo-comun.mjs';
 
 config({ path: process.env.ENV_PRUEBAS ?? 'supabase/.env' });
 const { SUPABASE_URL: URL_, SUPABASE_ANON_KEY: ANON, SEED_PASSWORD: PASS, SUPABASE_SERVICE_ROLE_KEY: SRV } = process.env as Record<string, string>;
@@ -20,12 +24,26 @@ const ok = (c: boolean, m: string) => {
   if (!c) fallas++;
 };
 
+const tokens = new Map<SupabaseClient, string>();
 async function como(usuario: string): Promise<SupabaseClient> {
   const r = await fetch(`${URL_}/functions/v1/entrar`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON }, body: JSON.stringify({ usuario, password: PASS }) });
   const d = (await r.json()) as { access_token?: string };
   if (r.status !== 200 || !d.access_token) throw new Error(`${usuario} no pudo entrar (${r.status})`);
-  return createClient(URL_, ANON, { auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${d.access_token}` } } });
+  const c = createClient(URL_, ANON, { auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${d.access_token}` } } });
+  tokens.set(c, d.access_token);
+  return c;
 }
+/** Igual que la app: el archivo sale por la Edge Function, que revisa el permiso en cada apertura. */
+const abrir = (c: SupabaseClient | null, ruta: string, descargar = false) =>
+  fetch(`${URL_}/functions/v1/archivo-material`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: ANON, Authorization: `Bearer ${c ? tokens.get(c) : ANON}` },
+    body: JSON.stringify({ ruta, descargar }),
+  });
+const limpieza = (c: SupabaseClient, modo: 'simular' | 'borrar') =>
+  fetch(`${URL_}/functions/v1/limpiar-materiales`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: ANON, Authorization: `Bearer ${tokens.get(c)}` }, body: JSON.stringify({ modo }),
+  });
 const anon = createClient(URL_, ANON, { auth: { persistSession: false } });
 const creados: string[] = [];
 
@@ -66,28 +84,36 @@ async function main() {
   const adj = (await srv.from('material_adjuntos').select('clase').eq('material_id', id).order('orden')).data?.map((a) => a.clase);
   ok(JSON.stringify(adj) === JSON.stringify(['codigo', 'imagen', 'pdf', 'enlace', 'enlace', 'enlace']), 'publicación con código, foto, PDF y 3 enlaces; clases detectadas por el servidor');
 
-  // 2. Otra área del equipo la ve, descarga y comenta
+  // 2. Otra área del equipo la ve, abre los archivos por la Edge Function y comenta
   const vista = await sofia.from('materiales').select('id, material_adjuntos(id)').eq('id', id).maybeSingle();
   ok(vista.data?.material_adjuntos.length === 6, 'Sofía (otra área) ve la publicación y sus 6 adjuntos');
-  const firma = await sofia.storage.from('materiales').createSignedUrl(rutas[0], 60);
-  const texto = firma.data ? await (await fetch(firma.data.signedUrl)).text() : '';
-  ok(texto.includes('void setup'), 'Sofía descarga el código con un enlace firmado');
+  const rc = await abrir(sofia, rutas[0]);
+  const texto = await rc.text();
+  ok(rc.status === 200 && texto.includes('void setup'), 'Sofía abre el código por la Edge Function');
+  ok((rc.headers.get('cache-control') ?? '').includes('no-store'), `la respuesta no se guarda en caché (${rc.headers.get('cache-control')})`);
+  ok((rc.headers.get('content-type') ?? '').startsWith('text/plain'), 'el código siempre sale como texto plano');
+  const rf = await abrir(sofia, rutas[1]);
+  ok(rf.status === 200 && (rf.headers.get('content-type') ?? '').startsWith('image/png') && (await rf.arrayBuffer()).byteLength === PNG.length, 'la foto sale completa y con su tipo');
+  const rd = await abrir(sofia, rutas[2], true);
+  ok(rd.status === 200 && /attachment; filename\*=UTF-8''reglamento\.pdf/.test(rd.headers.get('content-disposition') ?? ''), 'el PDF se descarga con su nombre');
+  ok(!!(await sofia.storage.from('materiales').createSignedUrl(rutas[0], 60)).error, 'Sofía ya no puede firmar enlaces (no hay URL que sobreviva a un retiro)');
+  ok(!!(await sofia.storage.from('materiales').download(rutas[0])).error, 'Sofía ya no descarga directo de Storage');
   const com = await sofia.rpc('comentar_material', { p_material: id, p_cliente_id: randomUUID(), p_texto: '¿Con qué sensor?' });
   ok(!com.error, 'Sofía comenta');
 
-  // 3. Tutor y anónimo: nada, ni por ruta directa
+  // 3. Tutor y anónimo: nada, ni por ruta directa ni por la función
   const tv = await tutor.from('materiales').select('id').eq('id', id);
   ok((tv.data ?? []).length === 0, 'el tutor no ve la publicación');
-  const tf = await tutor.storage.from('materiales').download(rutas[0]);
-  ok(!!tf.error, 'el tutor no descarga el archivo por ruta directa');
-  const ts = await tutor.storage.from('materiales').createSignedUrl(rutas[0], 60);
-  ok(!!ts.error, 'el tutor no puede firmar un enlace al archivo');
-  const af = await anon.storage.from('materiales').download(rutas[0]);
-  ok(!!af.error, 'anónimo no descarga el archivo');
+  ok((await abrir(tutor, rutas[0])).status === 404, 'el tutor no abre el archivo por la función');
+  ok(!!(await tutor.storage.from('materiales').download(rutas[0])).error, 'el tutor no descarga el archivo por ruta directa');
+  ok(!!(await tutor.storage.from('materiales').createSignedUrl(rutas[0], 60)).error, 'el tutor no puede firmar un enlace al archivo');
+  ok((await abrir(null, rutas[0])).status === 401, 'anónimo no abre el archivo por la función');
+  ok(!!(await anon.storage.from('materiales').download(rutas[0])).error, 'anónimo no descarga el archivo');
   const pub = await fetch(`${URL_}/storage/v1/object/public/materiales/${rutas[0]}`);
   ok(pub.status >= 400, `el bucket no es público (HTTP ${pub.status})`);
+  ok((await abrir(sofia, `${id}/../../otra/cosa.txt`)).status === 400, 'una ruta rara se rechaza');
 
-  // 4. Compañero no modifica lo ajeno; coach modera
+  // 4. Compañero no modifica lo ajeno
   ok(!!(await sofia.rpc('retirar_material', { p_material: id })).error, 'Sofía no puede retirar lo de Ana');
   ok(!!(await sofia.storage.from('materiales').upload(`${id}/${randomUUID()}.png`, new Blob([PNG], { type: 'image/png' }), { contentType: 'image/png' })).error, 'Sofía no sube archivos a la publicación de Ana');
 
@@ -102,10 +128,11 @@ async function main() {
   ok(/grande/.test(rg.error?.message ?? ''), 'una foto de más de 1 MB se rechaza al registrarla');
   const disfraz = `${b}/${randomUUID()}.pdf`;
   await ana.storage.from('materiales').upload(disfraz, new Blob([PNG], { type: 'image/png' }), { contentType: 'image/png' });
-  const rd = await ana.rpc('agregar_adjunto', { p_material: b, p_tipo: 'archivo', p_nombre: 'x.pdf', p_ruta: disfraz });
-  ok(/no permitido/.test(rd.error?.message ?? ''), 'un .pdf que en realidad es imagen se rechaza');
-  const huerf = (await sofia.storage.from('materiales').createSignedUrl(grande, 60)).error;
-  ok(!!huerf, 'los archivos de un borrador no son accesibles para otros');
+  const rdz = await ana.rpc('agregar_adjunto', { p_material: b, p_tipo: 'archivo', p_nombre: 'x.pdf', p_ruta: disfraz });
+  ok(/no permitido/.test(rdz.error?.message ?? ''), 'un .pdf que en realidad es imagen se rechaza');
+  ok((await abrir(sofia, grande)).status === 404, 'los archivos de un borrador no son accesibles para otros');
+  ok((await abrir(ana, grande)).status === 200, 'la autora sí abre los archivos de su borrador');
+  ok((await ana.storage.from('materiales').list(b)).data?.length === 2, 'la autora ve sus archivos de borrador en Storage (para quitarlos)');
 
   // 5b. Archivo subido pero nunca registrado: no se vuelve visible al publicar con otro adjunto
   const h = (await ana.rpc('crear_material', { p_cliente_id: randomUUID(), p_titulo: 'Con huérfano', p_categoria: 'otro' })).data as string;
@@ -116,12 +143,9 @@ async function main() {
   await ana.storage.from('materiales').upload(huerfano, new Blob([PNG], { type: 'image/png' }), { contentType: 'image/png' });
   await ana.rpc('agregar_adjunto', { p_material: h, p_tipo: 'archivo', p_nombre: 'bueno.png', p_ruta: bueno });
   await ana.rpc('publicar_material', { p_material: h });
-  const lista = (await sofia.storage.from('materiales').list(h)).data?.map((f) => `${h}/${f.name}`) ?? [];
-  const firmaH = await sofia.storage.from('materiales').createSignedUrl(huerfano, 60);
-  const bajaH = await sofia.storage.from('materiales').download(huerfano);
-  const firmaB = await sofia.storage.from('materiales').createSignedUrl(bueno, 60);
-  ok(lista.length === 1 && lista[0] === bueno, 'al listar la carpeta, otros solo ven el archivo registrado');
-  ok(!!firmaH.error && !!bajaH.error && !firmaB.error, 'el archivo sin registrar no se firma ni se descarga; el registrado sí');
+  const lista = (await sofia.storage.from('materiales').list(h)).data ?? [];
+  ok(lista.length === 0, 'otros ya no listan la carpeta en Storage');
+  ok((await abrir(sofia, huerfano)).status === 404 && (await abrir(sofia, bueno)).status === 200, 'el archivo sin registrar no se abre; el registrado sí');
 
   // 6. Reintento sin duplicados
   const cli = randomUUID();
@@ -135,11 +159,32 @@ async function main() {
   const a2 = (await ana.rpc('agregar_adjunto', { p_material: r1, p_tipo: 'archivo', p_nombre: 'p.png', p_ruta: ruta })).data;
   ok(r1 === r2 && a1 === a2 && !!otra.error, 'el reintento reusa el borrador, la ruta y el adjunto (sin duplicados)');
 
-  // 7. Moderación del coach
+  // 7. Retiro: corte INMEDIATO. Sofía tenía la página abierta y la foto ya cargada: la siguiente apertura se niega.
+  ok((await abrir(sofia, rutas[1])).status === 200, 'antes del retiro, Sofía abre la foto');
   const m = await coach.rpc('retirar_material', { p_material: id });
   const tras = await sofia.from('materiales').select('id').eq('id', id);
-  const archivoTras = await sofia.storage.from('materiales').createSignedUrl(rutas[0], 60);
-  ok(!m.error && (tras.data ?? []).length === 0 && !!archivoTras.error, 'el coach retira; el equipo deja de ver la publicación y sus archivos');
+  ok(!m.error && (tras.data ?? []).length === 0, 'el coach retira; el equipo deja de ver la publicación');
+  const t0 = Date.now();
+  const cortes = await Promise.all(rutas.map((r) => abrir(sofia, r)));
+  ok(cortes.every((r) => r.status === 404), `justo después del retiro ninguna apertura sirve (${Date.now() - t0} ms, sin esperar a que venza nada)`);
+  ok((await abrir(coach, rutas[1])).status === 200 && (await abrir(ana, rutas[1])).status === 200, 'el coach y la autora sí la siguen abriendo');
+
+  // 8. Limpieza: solo el coach principal; un borrador abandonado (envejecido 40 días) se simula y se borra
+  ok((await limpieza(sofia, 'simular')).status === 403, 'un alumno no puede correr la limpieza');
+  const viejo = (await ana.rpc('crear_material', { p_cliente_id: randomUUID(), p_titulo: 'Abandonado (prueba)', p_categoria: 'otro' })).data as string;
+  creados.push(viejo);
+  const fv = `${viejo}/${randomUUID()}.png`;
+  await ana.storage.from('materiales').upload(fv, new Blob([PNG], { type: 'image/png' }), { contentType: 'image/png' });
+  const d = destino('pruebas', resolve(process.cwd(), '..'));
+  pg(d, 'psql', ['-q', '-c', `update public.materiales set creado_at = now() - interval '40 days' where id = '${viejo}';
+    update storage.objects set created_at = now() - interval '40 days' where bucket_id = 'materiales' and name like '${viejo}/%';`]);
+  const sim = await (await limpieza(coach, 'simular')).json();
+  ok(sim.modo === 'simular' && sim.borradores >= 1 && sim.archivos >= 1, `el simulacro encuentra el borrador abandonado (${sim.borradores} borradores, ${sim.archivos} archivos) y no borra nada`);
+  ok(!!(await srv.from('materiales').select('id').eq('id', viejo).maybeSingle()).data, 'tras simular, el borrador sigue ahí');
+  const hecho = await (await limpieza(coach, 'borrar')).json();
+  ok(hecho.hecho?.borradores >= 1 && !(await srv.from('materiales').select('id').eq('id', viejo).maybeSingle()).data, 'al confirmar, se borra el borrador abandonado');
+  ok(((await srv.storage.from('materiales').list(viejo)).data ?? []).length === 0, 'y su archivo también');
+  ok(!!(await srv.from('materiales').select('id').eq('id', b).maybeSingle()).data, 'un borrador reciente no se toca');
 }
 
 async function limpiar() {

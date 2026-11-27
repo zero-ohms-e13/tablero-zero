@@ -137,12 +137,18 @@ describe('Materiales · borradores y archivos', () => {
     const q1 = await adjuntar(U.luis, m, quitado, 'borrar.jpg');
     await uno(U.luis, `public.quitar_adjunto('${q1}')`);
     await uno(U.luis, `public.publicar_material('${m}')`);
+    // Desde la migración 15 nadie lee ni firma estos objetos directo: salen por la Edge Function, que pregunta
+    // a archivo_material() en cada apertura. Ahí solo el archivo REGISTRADO es visible para los demás.
     for (const quien of [U.ana, U.sofia, U.coach]) {
-      const vistos = await b.como<{ name: string }>(quien, `select name from storage.objects where bucket_id = 'materiales' and name like '${m}/%'`);
-      expect(vistos.map((o) => o.name), quien).toEqual([valido]);
+      expect(await b.como(quien, `select 1 from storage.objects where bucket_id = 'materiales' and name like '${m}/%'`), quien).toHaveLength(0);
+      for (const r of [valido, pendiente, quitado]) {
+        const fila = await b.comoServicio(`select * from public.archivo_material('${quien}', '${r}')`);
+        expect(fila.length, `${quien} ${r}`).toBe(r === valido ? 1 : 0);
+      }
     }
-    // El autor sigue viendo todo lo suyo (para limpiar)
-    expect(await b.como(U.luis, `select 1 from storage.objects where name like '${m}/%'`)).toHaveLength(3);
+    // El autor abre todo lo suyo (para retomar o limpiar), pero ya no directo en Storage: está publicada
+    for (const r of [valido, pendiente, quitado]) expect(await b.comoServicio(`select 1 from public.archivo_material('${U.luis}', '${r}')`)).toHaveLength(1);
+    expect(await b.como(U.luis, `select 1 from storage.objects where name like '${m}/%'`)).toHaveLength(0);
   });
 
   it('nadie sube archivos a la publicación de otro ni a una ya publicada', async () => {
