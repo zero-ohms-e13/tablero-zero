@@ -324,3 +324,9 @@ verify_jwt = false
 
 [functions.push]
 verify_jwt = false
+
+[functions.archivo-material]
+verify_jwt = false
+
+[functions.limpiar-materiales]
+verify_jwt = false

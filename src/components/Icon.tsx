@@ -78,6 +78,7 @@ const P: Record<string, ReactNode> = {
   enviar: <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />,
   cerrar: <path d="M6 6l12 12M18 6 6 18" />,
   imprimir: <path d="M6 9V3h12v6M6 18H4v-7h16v7h-2M6 14h12v7H6z" />,
+  basura: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" />,
   imagen: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="2" />
