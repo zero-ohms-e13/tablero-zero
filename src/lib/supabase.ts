@@ -48,6 +48,17 @@ const almacen = {
   },
 };
 
+/** Usuario de la sesión guardada en este teléfono (sin red ni validar: solo para no borrar SU caché al abrir). */
+export function usuarioGuardado(): string | undefined {
+  try {
+    const v = almacen.getItem('tz.sesion');
+    const id = v ? (JSON.parse(v) as { user?: { id?: unknown } }).user?.id : undefined;
+    return typeof id === 'string' ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export const supabase = createClient(url ?? 'http://localhost:54321', anon ?? 'falta-configurar', {
   auth: { storage: almacen, persistSession: true, autoRefreshToken: true, storageKey: 'tz.sesion' },
 });

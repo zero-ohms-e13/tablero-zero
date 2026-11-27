@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { Session } from '@supabase/supabase-js';
 import { useQueryClient } from '@tanstack/react-query';
 import { activarCacheDe, borrarRespaldos, cerrarCache, limpiarCopias } from './cache-privada';
-import { FUNCIONES, recordar, supabase } from './supabase';
+import { FUNCIONES, recordar, supabase, usuarioGuardado } from './supabase';
 import type { Membresia, Perfil } from './tipos';
 
 type Ctx = {
@@ -47,6 +47,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [membresias, setMembresias] = useState<Membresia[]>([]);
   const [cargando, setCargando] = useState(true);
+  const qc = useQueryClient();
 
   const cargarPerfil = useCallback(async (uid: string | undefined) => {
     if (!uid) {
@@ -54,23 +55,45 @@ export function SesionProvider({ children }: { children: ReactNode }) {
       setMembresias([]);
       return;
     }
-    const [{ data: p }, { data: m }] = await Promise.all([
+    const [{ data: p, error: ep }, { data: m, error: em }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
       supabase.from('membresias').select('*').eq('usuario_id', uid),
     ]);
+    if (ep || em) {
+      // Sin conexión (o el servidor no respondió): se usa la última copia del perfil, guardada en la caché
+      // privada de ESTE usuario (se borra al cerrar sesión). Así la app abre sin red y no pierde borradores.
+      const copia = qc.getQueryData<{ perfil: Perfil; membresias: Membresia[] }>(['mi-sesion', uid]);
+      if (copia?.perfil) {
+        setPerfil(copia.perfil);
+        setMembresias(copia.membresias ?? []);
+        return;
+      }
+    }
     setPerfil((p as Perfil) ?? null);
     setMembresias((m as Membresia[]) ?? []);
-  }, []);
+    if (!ep && !em && p) qc.setQueryData(['mi-sesion', uid], { perfil: p, membresias: m ?? [] });
+  }, [qc]);
+
+  // Al volver la conexión se vuelve a leer el perfil (por si cambió mientras estaba sin red)
+  const uidActual = sesion?.user.id;
+  useEffect(() => {
+    if (!uidActual) return;
+    const alVolver = () => void cargarPerfil(uidActual).catch(() => {});
+    window.addEventListener('online', alVolver);
+    return () => window.removeEventListener('online', alVolver);
+  }, [uidActual, cargarPerfil]);
 
   // Supabase emite INITIAL_SESSION al arrancar (con o sin sesión guardada), así que
   // todo se carga desde aquí. Las consultas van fuera del callback (setTimeout) para
   // no trabar el candado interno del cliente de auth.
-  const qc = useQueryClient();
   useEffect(() => {
     let ultimoUid: string | undefined | null = null;
     // Serializa los cambios de sesión: cada evento espera al anterior (cambio A→B rápido, dos pestañas).
     let cola: Promise<void> = Promise.resolve();
-    limpiarCopias(); // claves de versiones anteriores; la del usuario se restaura al conocer su identidad
+    // Se borran las copias de OTRAS cuentas y de versiones anteriores; la de quien tiene la sesión guardada en
+    // este teléfono se conserva (antes se borraba también y la app no podía abrir sin red: se quedaba en
+    // "Preparando tu cuenta…"). Si al final entra otra persona, activarCacheDe borra esta copia.
+    limpiarCopias(usuarioGuardado());
     const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
       setSesion(s);
       const uid = s?.user.id;

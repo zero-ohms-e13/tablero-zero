@@ -149,9 +149,12 @@ export function useRevisarBitacora() {
 /** Plazo vigente de una semana: el que fijó el coach o el de omisión (domingo 20:00). Lo decide la base. */
 export const usePlazoBitacora = (lunes: string) =>
   useQuery({
+    // En la caché se guarda TEXTO (ISO) y se convierte a fecha al leer: la caché del teléfono se guarda como
+    // JSON y una fecha restaurada volvería como texto (rompía la bitácora al abrir la app sin red).
     queryKey: ['plazo_bitacora', lunes],
-    queryFn: async () => new Date(ok(await supabase.rpc('vence_bitacora', { p_semana: lunes })) as string),
-    placeholderData: () => venceDe(lunes), // mientras responde, el de omisión
+    queryFn: async () => new Date(ok(await supabase.rpc('vence_bitacora', { p_semana: lunes })) as string).toISOString(),
+    select: (iso: string | Date) => new Date(iso),
+    placeholderData: () => venceDe(lunes).toISOString(), // mientras responde, el de omisión
     staleTime: 60_000,
   });
 

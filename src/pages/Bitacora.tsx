@@ -107,7 +107,9 @@ export default function Bitacora() {
       </HeaderVino>
 
       <div className="flex flex-col gap-4 px-4 pt-4">
-        {q.isLoading ? <Cargando /> : q.isError ? (
+        {/* Sin red: si hay copia guardada (o se abrió una bitácora con su respaldo local) se muestra igual;
+            el error solo cuando no hay nada que enseñar. */}
+        {q.isLoading && !q.data ? <Cargando /> : q.isError && !q.data && !sel ? (
           <p className="m-0 rounded-campo bg-[#F6D6D6] p-3 text-sm text-vino">{(q.error as Error).message}</p>
         ) : sel ? (
           <>
