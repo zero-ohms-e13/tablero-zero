@@ -34,3 +34,8 @@ supabase/.branches
 # Acceso temporal del coach (local, nunca al repo)
 ACCESO_COACH.txt
 respaldos/
+
+# Pruebas de punta a punta (Playwright)
+dist-pruebas
+test-results
+playwright-report
