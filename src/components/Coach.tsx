@@ -90,6 +90,7 @@ export function SidebarCoach() {
         {item('/materiales', 'Materiales del equipo')}
         {item('/coach/metas', 'Metas y competencias')}
         {item('/coach/cuentas', 'Cuentas y fichas de tutor')}
+        {perfil?.rol_global === 'coach' && item('/coach/importar', 'Importar datos')}
         {item('/coach/logros', 'Logros del equipo')}
         {item('/avisos', 'Avisos y mensajes', false, sinLeer)}
         {item('/perfil', 'Mi perfil')}
