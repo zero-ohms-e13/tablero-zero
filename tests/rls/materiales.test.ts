@@ -124,7 +124,9 @@ describe('Materiales · borradores y archivos', () => {
       expect((await ver(quien)).map((x) => x.id), quien).not.toContain(m);
       expect(await b.como(quien, `select 1 from storage.objects where name = '${ruta}'`), quien).toHaveLength(0);
     }
-    expect(await b.como(U.diego, `select 1 from storage.objects where name = '${ruta}'`)).toHaveLength(1);
+    // Desde la migración 16 ni el autor lee el objeto directo (no puede firmar enlaces); lo abre por la función
+    expect(await b.como(U.diego, `select 1 from storage.objects where name = '${ruta}'`)).toHaveLength(0);
+    expect(await b.comoServicio(`select 1 from public.archivo_material('${U.diego}', '${ruta}')`)).toHaveLength(1);
   });
 
   it('un archivo sin registrar o quitado no se vuelve visible cuando la publicación sale con otro adjunto', async () => {

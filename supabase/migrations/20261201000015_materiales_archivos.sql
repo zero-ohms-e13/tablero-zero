@@ -1,11 +1,10 @@
 -- Tablero Zero · Materiales: corte inmediato al retirar y limpieza de borradores abandonados
 --
--- 1) Archivos sin URL firmadas. Hasta ahora el navegador pedía enlaces firmados de 30 minutos. Un enlace
---    ya entregado seguía sirviendo aunque la publicación se retirara después. Ahora los archivos de
---    publicaciones solo salen por la Edge Function archivo-material, que en CADA apertura pregunta aquí
---    si esa persona puede verlo y responde sin caché (no-store). Por eso el navegador ya no puede leer ni
---    firmar esos objetos: solo el autor, y solo los de su BORRADOR, para poder quitarlos mientras edita.
---    Las URL firmadas que ya existían vencen solas a más tardar 30 minutos después de aplicar esto.
+-- 1) Archivos sin URL firmadas (PASO 1 de 2: abrir la vía nueva). Hasta ahora el navegador pedía enlaces
+--    firmados de 30 minutos, y un enlace ya entregado seguía sirviendo aunque la publicación se retirara.
+--    Ahora los archivos salen por la Edge Function archivo-material, que en CADA apertura pregunta aquí
+--    (archivo_material) si esa persona puede verlo y responde sin caché (no-store). Esta migración NO cierra
+--    todavía la vía directa de Storage: eso lo hace la 16, después de publicar el frontend que usa la función.
 -- 2) Limpieza: borradores sin actividad por N días (30, decisión de Jaime) y archivos huérfanos (subidos y
 --    nunca registrados). La Edge Function limpiar-materiales primero simula y solo borra con el OK del coach
 --    principal. El registro se borra antes que los archivos: si se corta a la mitad, lo que quede son
@@ -31,15 +30,6 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke execute on function public.archivo_material(uuid, text) from anon, authenticated, public;
 grant execute on function public.archivo_material(uuid, text) to service_role;
-
--- El navegador ya no lee ni firma archivos de publicaciones: solo el autor, de su propio borrador
--- (Storage exige leer para poder borrar).
-drop policy if exists mat_storage_select on storage.objects;
-create policy mat_storage_select on storage.objects for select to authenticated using (
-  bucket_id = 'materiales' and exists (
-    select 1 from public.materiales m where m.id = public.material_de_ruta(name)
-      and m.autor_id = auth.uid() and m.estado = 'borrador' and public.puede_ver_materiales())
-);
 
 -- ---------- 2. Limpieza ----------
 -- Última actividad de un borrador: creación, edición, adjuntos registrados y archivos subidos.

@@ -179,24 +179,44 @@ export function usePublicarMaterial() {
   return useMutation({
     /** `avance` informa cada archivo ya registrado para no repetirlo si el siguiente intento continúa. */
     mutationFn: async ({ b, avance }: { b: Borrador; avance: (uid: string, adjunto: string) => void }) => {
-      const id = ok(await supabase.rpc('crear_material', {
-        p_cliente_id: b.clienteId, p_titulo: b.titulo, p_categoria: b.categoria, p_nota: b.nota || null, p_area: b.area, p_tarea: b.tarea,
-      })) as string;
-      // Si es un reintento, el borrador ya existía: sincroniza lo que se haya corregido en el formulario
-      ok(await supabase.rpc('editar_material', { p_material: id, p_titulo: b.titulo, p_nota: b.nota || null, p_categoria: b.categoria }));
-      for (const a of b.archivos) {
-        if (a.registrado) continue;
-        const { cuerpo, ext, tipo } = await preparar(a.archivo, a.clase);
-        const ruta = `${id}/${a.uid}.${ext}`;
-        const up = await supabase.storage.from(BUCKET).upload(ruta, cuerpo, { contentType: tipo, upsert: false });
-        // "ya existe" = subida anterior que llegó aunque se perdió la respuesta: se registra igual
-        if (up.error && !/exists|duplicate/i.test(up.error.message)) throw new Error(traducirError(up.error.message));
-        const adj = ok(await supabase.rpc('agregar_adjunto', { p_material: id, p_tipo: 'archivo', p_nombre: a.archivo.name, p_ruta: ruta, p_clase: a.clase })) as string;
-        avance(a.uid, adj);
+      const registrados = new Map(b.archivos.filter((a) => a.registrado).map((a) => [a.uid, a.registrado!]));
+      // Dos vueltas como máximo: si la limpieza borró el borrador (30 días sin actividad) mientras tanto,
+      // se publica en uno nuevo en lugar de fallar o de dar por guardado algo que no quedó.
+      for (let vuelta = 0; ; vuelta++) {
+        const id = ok(await supabase.rpc('crear_material', {
+          p_cliente_id: b.clienteId, p_titulo: b.titulo, p_categoria: b.categoria, p_nota: b.nota || null, p_area: b.area, p_tarea: b.tarea,
+        })) as string;
+        if (registrados.size) {
+          // Solo cuentan los adjuntos que siguen en ESTE borrador
+          const vivos = new Set(((await supabase.from('material_adjuntos').select('id').eq('material_id', id)).data ?? []).map((x) => x.id as string));
+          for (const [uid, adj] of registrados) if (!vivos.has(adj)) registrados.delete(uid);
+        }
+        try {
+          // Si es un reintento, el borrador ya existía: sincroniza lo que se haya corregido en el formulario
+          ok(await supabase.rpc('editar_material', { p_material: id, p_titulo: b.titulo, p_nota: b.nota || null, p_categoria: b.categoria }));
+          for (const a of b.archivos) {
+            if (registrados.has(a.uid)) continue;
+            const { cuerpo, ext, tipo } = await preparar(a.archivo, a.clase);
+            const ruta = `${id}/${a.uid}.${ext}`;
+            const up = await supabase.storage.from(BUCKET).upload(ruta, cuerpo, { contentType: tipo, upsert: false });
+            // "ya existe" = subida anterior que llegó aunque se perdió la respuesta: se registra igual
+            if (up.error && !/exists|duplicate/i.test(up.error.message)) throw new Error(traducirError(up.error.message));
+            const adj = ok(await supabase.rpc('agregar_adjunto', { p_material: id, p_tipo: 'archivo', p_nombre: a.archivo.name, p_ruta: ruta, p_clase: a.clase })) as string;
+            registrados.set(a.uid, adj);
+            avance(a.uid, adj);
+          }
+          for (const url of b.enlaces) ok(await supabase.rpc('agregar_adjunto', { p_material: id, p_tipo: 'enlace', p_nombre: '', p_url: url }));
+          ok(await supabase.rpc('publicar_material', { p_material: id }));
+          return id;
+        } catch (e) {
+          const { data: sigue } = await supabase.from('materiales').select('id').eq('id', id).maybeSingle();
+          if (vuelta === 0 && !sigue) {
+            registrados.clear();
+            continue;
+          }
+          throw e;
+        }
       }
-      for (const url of b.enlaces) ok(await supabase.rpc('agregar_adjunto', { p_material: id, p_tipo: 'enlace', p_nombre: '', p_url: url }));
-      ok(await supabase.rpc('publicar_material', { p_material: id }));
-      return id;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['materiales'] }),
   });

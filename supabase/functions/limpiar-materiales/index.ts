@@ -19,6 +19,11 @@ Deno.serve(async (req) => {
   }
   const body = (await req.json().catch(() => ({}))) as { modo?: string; dias?: number };
   const modo = body.modo === 'borrar' ? 'borrar' : 'simular';
+  // En producción arranca en modo simulacro: borrar solo se habilita con el secreto LIMPIEZA_BORRAR=si,
+  // después de que Jaime revise el primer simulacro real.
+  if (modo === 'borrar' && Deno.env.get('LIMPIEZA_BORRAR') !== 'si') {
+    return json(req, { error: 'La limpieza está en modo simulacro: revisa el resultado y pide que se habilite el borrado.' }, 409);
+  }
 
   const informe = await limpiar(modo, Number(body.dias ?? DIAS), {
     porLimpiar: async (dias) => {

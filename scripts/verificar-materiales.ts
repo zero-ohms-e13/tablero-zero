@@ -1,7 +1,9 @@
 // Materiales del equipo · prueba de integración con Auth, PostgREST, Storage y Edge Functions REALES en un
-// proyecto Supabase DE PRUEBAS (seed de demo y migraciones 20261127000011 y 20261201000015 aplicadas; funciones
-// archivo-material y limpiar-materiales desplegadas).
+// proyecto Supabase DE PRUEBAS (seed de demo y migraciones 11, 15 y 16 aplicadas; funciones archivo-material y
+// limpiar-materiales desplegadas).
 // Uso: VERIFICAR_DESTINO=pruebas ENV_PRUEBAS=<ruta al .env del proyecto de pruebas> npx tsx scripts/verificar-materiales.ts
+//      Con LIMPIEZA_BORRAR=si (el mismo secreto puesto en la función del proyecto de pruebas) también prueba el borrado;
+//      sin él, comprueba que la función se niega a borrar (modo simulacro).
 // No imprime llaves ni contraseñas. Borra todo lo que crea (filas y archivos).
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config } from 'dotenv';
@@ -132,7 +134,9 @@ async function main() {
   ok(/no permitido/.test(rdz.error?.message ?? ''), 'un .pdf que en realidad es imagen se rechaza');
   ok((await abrir(sofia, grande)).status === 404, 'los archivos de un borrador no son accesibles para otros');
   ok((await abrir(ana, grande)).status === 200, 'la autora sí abre los archivos de su borrador');
-  ok((await ana.storage.from('materiales').list(b)).data?.length === 2, 'la autora ve sus archivos de borrador en Storage (para quitarlos)');
+  ok(((await ana.storage.from('materiales').list(b)).data ?? []).length === 0, 'ni la autora lista su borrador en Storage');
+  ok(!!(await ana.storage.from('materiales').createSignedUrl(grande, 60)).error, 'ni la autora puede firmar un enlace de su borrador (no sobreviviría a un retiro)');
+  ok(!!(await ana.storage.from('materiales').download(grande)).error, 'ni la autora descarga directo su borrador');
 
   // 5b. Archivo subido pero nunca registrado: no se vuelve visible al publicar con otro adjunto
   const h = (await ana.rpc('crear_material', { p_cliente_id: randomUUID(), p_titulo: 'Con huérfano', p_categoria: 'otro' })).data as string;
@@ -171,7 +175,8 @@ async function main() {
 
   // 8. Limpieza: solo el coach principal; un borrador abandonado (envejecido 40 días) se simula y se borra
   ok((await limpieza(sofia, 'simular')).status === 403, 'un alumno no puede correr la limpieza');
-  const viejo = (await ana.rpc('crear_material', { p_cliente_id: randomUUID(), p_titulo: 'Abandonado (prueba)', p_categoria: 'otro' })).data as string;
+  const cliViejo = randomUUID();
+  const viejo = (await ana.rpc('crear_material', { p_cliente_id: cliViejo, p_titulo: 'Abandonado (prueba)', p_categoria: 'otro' })).data as string;
   creados.push(viejo);
   const fv = `${viejo}/${randomUUID()}.png`;
   await ana.storage.from('materiales').upload(fv, new Blob([PNG], { type: 'image/png' }), { contentType: 'image/png' });
@@ -179,12 +184,25 @@ async function main() {
   pg(d, 'psql', ['-q', '-c', `update public.materiales set creado_at = now() - interval '40 days' where id = '${viejo}';
     update storage.objects set created_at = now() - interval '40 days' where bucket_id = 'materiales' and name like '${viejo}/%';`]);
   const sim = await (await limpieza(coach, 'simular')).json();
+  if (process.env.LIMPIEZA_BORRAR !== 'si') {
+    ok(sim.modo === 'simular' && sim.borradores >= 1, `el simulacro encuentra el borrador abandonado (${sim.borradores} borradores, ${sim.archivos} archivos)`);
+    const r = await limpieza(coach, 'borrar');
+    ok(r.status === 409 && /simulacro/.test((await r.json()).error ?? ''), 'sin habilitarlo, la función se niega a borrar (modo simulacro)');
+    ok(!!(await srv.from('materiales').select('id').eq('id', viejo).maybeSingle()).data, 'y el borrador sigue ahí');
+    return;
+  }
   ok(sim.modo === 'simular' && sim.borradores >= 1 && sim.archivos >= 1, `el simulacro encuentra el borrador abandonado (${sim.borradores} borradores, ${sim.archivos} archivos) y no borra nada`);
   ok(!!(await srv.from('materiales').select('id').eq('id', viejo).maybeSingle()).data, 'tras simular, el borrador sigue ahí');
   const hecho = await (await limpieza(coach, 'borrar')).json();
   ok(hecho.hecho?.borradores >= 1 && !(await srv.from('materiales').select('id').eq('id', viejo).maybeSingle()).data, 'al confirmar, se borra el borrador abandonado');
   ok(((await srv.storage.from('materiales').list(viejo)).data ?? []).length === 0, 'y su archivo también');
   ok(!!(await srv.from('materiales').select('id').eq('id', b).maybeSingle()).data, 'un borrador reciente no se toca');
+  // La alumna seguía con el formulario abierto sobre el borrador que se limpió
+  const tarde = await ana.storage.from('materiales').upload(`${viejo}/${randomUUID()}.png`, new Blob([PNG], { type: 'image/png' }), { contentType: 'image/png' });
+  ok(!!tarde.error, 'una subida que llega después de limpiar el borrador se rechaza (no queda "guardada")');
+  const nuevo = (await ana.rpc('crear_material', { p_cliente_id: cliViejo, p_titulo: 'Abandonado (prueba)', p_categoria: 'otro' })).data as string;
+  if (nuevo) creados.push(nuevo);
+  ok(!!nuevo && nuevo !== viejo, 'al reintentar, la app obtiene un borrador nuevo y vuelve a publicar ahí');
 }
 
 async function limpiar() {

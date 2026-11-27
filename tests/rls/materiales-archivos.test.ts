@@ -1,4 +1,4 @@
-// Materiales · corte inmediato al retirar y limpieza de borradores (migración 15). PGlite, datos ficticios.
+// Materiales · corte inmediato al retirar y limpieza de borradores (migraciones 15 y 16). PGlite, datos ficticios.
 // Los archivos ya no se leen ni se firman desde el navegador: la Edge Function pregunta a archivo_material()
 // en cada apertura. La limpieza solo la corre el servidor (service_role).
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -58,14 +58,20 @@ describe('Materiales · archivos sin URL firmadas', () => {
     await b.db.query(`update profiles set activo = true where id = '${U.marco}'`);
   });
 
-  it('el borrador: solo su autor lo lee en Storage (para poder quitar archivos mientras edita)', async () => {
+  it('el borrador: su autor sube y lo abre por la función, pero NADIE (ni él) lee, firma ni borra el objeto directo', async () => {
     const m = await crear(U.sofia, uid('d1', 3), 'Borrador de Sofía');
     const r = `${m}/${uid('e1', 3)}.jpg`;
     expect(await subir(U.sofia, r)).toBeNull();
-    expect(await b.como(U.sofia, `select 1 from storage.objects where name = '${r}'`)).toHaveLength(1);
-    for (const quien of [U.ana, U.coach]) expect(await b.como(quien, `select 1 from storage.objects where name = '${r}'`), quien).toHaveLength(0);
+    for (const quien of [U.sofia, U.ana, U.coach]) expect(await b.como(quien, `select 1 from storage.objects where name = '${r}'`), quien).toHaveLength(0);
+    // sin política de borrado: el delete no toca nada (el archivo suelto lo retira la limpieza)
+    await b.como(U.sofia, `delete from storage.objects where name = '${r}'`);
+    expect((await b.db.query(`select 1 from storage.objects where name = '${r}'`)).rows).toHaveLength(1);
     expect(await puede(U.ana, r)).toBe(false);
     expect(await puede(U.sofia, r)).toBe(true);
+    // quitar un adjunto del borrador sigue funcionando (borra el registro; el archivo queda para la limpieza)
+    const a = await adjuntar(U.sofia, m, r);
+    await uno(U.sofia, `public.quitar_adjunto('${a}')`);
+    expect((await b.db.query(`select 1 from material_adjuntos where id = '${a}'`)).rows).toHaveLength(0);
   });
 
   it('archivo_material y la limpieza no se pueden llamar desde el navegador', async () => {
@@ -112,6 +118,18 @@ describe('Materiales · limpieza de borradores (30 días)', () => {
     // Su archivo queda como huérfano hasta que la función lo quite (y la siguiente revisión lo encuentra)
     const despues = await srv<{ tipo: string; rutas: string[] }>(`select * from public.materiales_por_limpiar(30)`);
     expect(despues.some((f) => f.tipo === 'huerfano' && f.rutas[0] === fv)).toBe(true);
+  });
+
+  it('una subida que llega después de limpiar un borrador vencido se rechaza con error (no queda "guardada")', async () => {
+    const m = await crear(U.luis, uid('d2', 7), 'Vencido');
+    await envejecer(m, 45);
+    expect((await srv<{ r: boolean }>(`select public.borrar_borrador_vencido('${m}', 30) as r`))[0].r).toBe(true);
+    // el alumno seguía con la pantalla abierta: su subida y su registro fallan
+    expect(await subir(U.luis, `${m}/${uid('e2', 7)}.jpg`)).toMatch(/row-level security/);
+    expect(await b.falla(U.luis, `select public.agregar_adjunto('${m}', 'archivo', 'foto.jpg', '${m}/${uid('e2', 7)}.jpg')`)).toMatch(/permiso|no existe|not found/i);
+    // al reintentar, crear_material con el mismo cliente crea un borrador NUEVO (el viejo ya no existe)
+    const otro = await crear(U.luis, uid('d2', 7), 'Vencido');
+    expect(otro).not.toBe(m);
   });
 
   it('si el borrador vuelve a tener actividad justo antes de borrar, no se borra', async () => {
